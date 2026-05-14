@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" role="img" aria-labelledby="title desc">
+  <title id="title">Certificate Hero Illustration</title>
+  <desc id="desc">Abstract certificate themed illustration with geometric accents.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#eff6ff" />
+      <stop offset="55%" stop-color="#dbeafe" />
+      <stop offset="100%" stop-color="#bfdbfe" />
+    </linearGradient>
+    <linearGradient id="card" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="100%" stop-color="#f8fafc" />
+    </linearGradient>
+    <linearGradient id="badge" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2563eb" />
+      <stop offset="100%" stop-color="#1d4ed8" />
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="800" fill="url(#bg)" />
+  <circle cx="1040" cy="120" r="170" fill="#93c5fd" opacity="0.35" />
+  <circle cx="180" cy="700" r="220" fill="#60a5fa" opacity="0.25" />
+
+  <g transform="translate(220 120)">
+    <rect x="0" y="0" width="760" height="520" rx="24" fill="url(#card)" stroke="#cbd5e1" stroke-width="3" />
+    <rect x="48" y="54" width="300" height="24" rx="8" fill="#1e40af" opacity="0.85" />
+    <rect x="48" y="98" width="640" height="12" rx="6" fill="#93c5fd" />
+    <rect x="48" y="128" width="520" height="12" rx="6" fill="#bfdbfe" />
+
+    <rect x="48" y="188" width="660" height="220" rx="16" fill="#eff6ff" stroke="#dbeafe" />
+    <rect x="86" y="228" width="420" height="14" rx="7" fill="#60a5fa" opacity="0.75" />
+    <rect x="86" y="262" width="540" height="14" rx="7" fill="#93c5fd" opacity="0.75" />
+    <rect x="86" y="296" width="360" height="14" rx="7" fill="#bfdbfe" opacity="0.85" />
+
+    <g transform="translate(560 212)">
+      <circle cx="86" cy="86" r="78" fill="url(#badge)" opacity="0.95" />
+      <polygon points="86,36 100,72 138,72 108,95 120,132 86,110 52,132 64,95 34,72 72,72" fill="#dbeafe" />
+    </g>
+
+    <rect x="48" y="444" width="220" height="24" rx="8" fill="#1d4ed8" opacity="0.85" />
+    <rect x="292" y="444" width="180" height="24" rx="8" fill="#3b82f6" opacity="0.75" />
+  </g>
+</svg>

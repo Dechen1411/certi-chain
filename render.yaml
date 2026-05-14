@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: certificate-system
+    runtime: node
+    buildCommand: npm ci --prefix backend && npm ci --prefix frontend && npm run build --prefix frontend
+    startCommand: npm start --prefix backend
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: VITE_API_BASE_URL
+        value: /api
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 12h
+      - key: ALLOWED_STUDENT_DOMAIN
+        value: "@rub.edu.bt"
+      - key: ADMIN_USERNAME
+        value: admin
+      - key: MONGODB_URI
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: CHAIN_RPC_URL
+        sync: false
+      - key: CERTIFICATE_REGISTRY_ADDRESS
+        sync: false
+      - key: ISSUER_PRIVATE_KEY
+        sync: false
+      - key: VITE_CHAIN_RPC_URL
+        sync: false
+      - key: VITE_CERTIFICATE_REGISTRY_ADDRESS
+        sync: false
