@@ -4,17 +4,52 @@ const bcrypt = require("bcryptjs");
 const request = require("supertest");
 
 const { createApp } = require("../app");
+const { getLinkedEthereumWalletAddresses } = require("../privy");
+
+test("Privy wallet extraction accepts linked Ethereum and smart wallets", () => {
+  const addresses = getLinkedEthereumWalletAddresses({
+    linked_accounts: [
+      {
+        type: "wallet",
+        chain_type: "ethereum",
+        address: "0x8ba1f109551bD432803012645Ac136ddd64DBA72",
+      },
+      {
+        type: "smart_wallet",
+        address: "0x1111111111111111111111111111111111111111",
+      },
+      {
+        type: "wallet",
+        chain_type: "solana",
+        address: "11111111111111111111111111111111",
+      },
+    ],
+  });
+
+  assert.deepEqual(addresses, [
+    "0x8ba1f109551bD432803012645Ac136ddd64DBA72",
+    "0x1111111111111111111111111111111111111111",
+  ]);
+});
 
 const createFakeUserModel = (initialUsers = []) => {
   const users = [...initialUsers];
 
+  const cloneUser = (user) => user && { ...user };
+
   const findOne = async (query) => {
     if (query.id) {
-      return users.find((user) => user.id === query.id) || null;
+      return cloneUser(users.find((user) => user.id === query.id) || null);
+    }
+
+    if (query.walletAddressNormalized) {
+      return cloneUser(
+        users.find((user) => user.walletAddressNormalized === query.walletAddressNormalized) || null,
+      );
     }
 
     if (Array.isArray(query.$or)) {
-      return (
+      return cloneUser(
         users.find((user) => {
           return query.$or.some((condition) => {
             if (condition.email) {
@@ -25,7 +60,7 @@ const createFakeUserModel = (initialUsers = []) => {
             }
             return false;
           });
-        }) || null
+        }) || null,
       );
     }
 
@@ -37,18 +72,94 @@ const createFakeUserModel = (initialUsers = []) => {
     return data;
   };
 
+  const findOneAndUpdate = async (query, update) => {
+    const user = users.find((candidate) => {
+      return Object.entries(query).every(([key, value]) => candidate[key] === value);
+    });
+
+    if (!user) {
+      return null;
+    }
+
+    Object.assign(user, update);
+    return cloneUser(user);
+  };
+
   return {
     findOne,
+    findOneAndUpdate,
     create,
     _users: users,
   };
 };
 
+const cloneTemplate = (template) => ({ ...template });
+
+const createFakeTemplateModel = (initialTemplates = []) => {
+  const templates = initialTemplates.map(cloneTemplate);
+  const findOneById = (id) => templates.find((template) => template.id === id) || null;
+
+  const createQuery = (value) => ({
+    sort(sortConfig) {
+      if (Array.isArray(value) && sortConfig?.updatedAt === -1) {
+        value.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+      }
+      return this;
+    },
+    lean: async () => Array.isArray(value) ? value.map(cloneTemplate) : value && cloneTemplate(value),
+  });
+
+  const create = async (data) => {
+    const now = new Date();
+    const template = {
+      ...data,
+      createdAt: data.createdAt || now,
+      updatedAt: data.updatedAt || now,
+    };
+    templates.push(template);
+    return template;
+  };
+
+  const find = () => createQuery([...templates]);
+  const findOne = (query) => createQuery(findOneById(query.id));
+
+  const findOneAndUpdate = (query, update) => {
+    const template = findOneById(query.id);
+    if (!template) {
+      return createQuery(null);
+    }
+
+    Object.assign(template, update, { updatedAt: new Date() });
+    return createQuery(template);
+  };
+
+  const deleteOne = async (query) => {
+    const index = templates.findIndex((template) => template.id === query.id);
+    if (index === -1) {
+      return { deletedCount: 0 };
+    }
+
+    templates.splice(index, 1);
+    return { deletedCount: 1 };
+  };
+
+  return {
+    create,
+    deleteOne,
+    find,
+    findOne,
+    findOneAndUpdate,
+    _templates: templates,
+  };
+};
+
 const createTestApp = (overrides = {}) => {
   const userModel = overrides.userModel || createFakeUserModel();
+  const templateModel = overrides.templateModel || createFakeTemplateModel();
   const issueCertificate = overrides.issueCertificate || (async () => ({ txHash: "0xtesthash" }));
 
   const app = createApp({
+    CertificateTemplate: templateModel,
     User: userModel,
     issueCertificate,
     frontendOrigin: "http://localhost:5173",
@@ -56,9 +167,33 @@ const createTestApp = (overrides = {}) => {
     jwtExpiresIn: "12h",
     allowedStudentDomain: "@rub.edu.bt",
     isProduction: false,
+    verifyPrivyAccessToken: overrides.verifyPrivyAccessToken,
   });
 
-  return { app, userModel };
+  return { app, templateModel, userModel };
+};
+
+const createAdminModel = async () => {
+  const adminHash = await bcrypt.hash("AdminPass123!", 12);
+  return createFakeUserModel([
+    {
+      id: "admin-1",
+      username: "admin",
+      email: "admin@college.edu",
+      passwordHash: adminHash,
+      role: "admin",
+      name: "Admin",
+    },
+  ]);
+};
+
+const loginAdmin = async (agent) => {
+  const loginResponse = await agent.post("/api/auth/login").send({
+    identifier: "admin",
+    password: "AdminPass123!",
+  });
+
+  assert.equal(loginResponse.status, 200);
 };
 
 test("signup ignores requested admin role and creates student account", async () => {
@@ -127,18 +262,139 @@ test("student session cannot issue certificates", async () => {
   assert.equal(issueResponse.status, 403);
 });
 
-test("admin session can issue certificates", async () => {
-  const adminHash = await bcrypt.hash("AdminPass123!", 12);
+test("student can bind a Privy-verified wallet", async () => {
+  const studentHash = await bcrypt.hash("StudentPass123!", 12);
+  const walletAddress = "0x8ba1f109551bD432803012645Ac136ddd64DBA72";
   const userModel = createFakeUserModel([
     {
-      id: "admin-1",
-      username: "admin",
-      email: "admin@college.edu",
-      passwordHash: adminHash,
-      role: "admin",
-      name: "Admin",
+      id: "student-1",
+      username: "student",
+      email: "student@rub.edu.bt",
+      passwordHash: studentHash,
+      role: "student",
+      name: "Student",
     },
   ]);
+
+  const verifyPrivyAccessToken = async (token) => {
+    assert.equal(token, "privy-token");
+    return {
+      privyUserId: "did:privy:student-1",
+      walletAddresses: [walletAddress.toLowerCase()],
+    };
+  };
+
+  const { app, userModel: model } = createTestApp({ userModel, verifyPrivyAccessToken });
+  const agent = request.agent(app);
+
+  const loginResponse = await agent.post("/api/auth/login").send({
+    identifier: "student",
+    password: "StudentPass123!",
+  });
+
+  assert.equal(loginResponse.status, 200);
+
+  const response = await agent
+    .post("/api/student/wallet/bind")
+    .set("Authorization", "Bearer privy-token")
+    .send({ walletAddress: walletAddress.toLowerCase() });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.user.walletAddress, walletAddress);
+  assert.ok(response.body.user.walletVerifiedAt);
+  assert.equal(model._users[0].walletAddress, walletAddress);
+  assert.equal(model._users[0].walletAddressNormalized, walletAddress.toLowerCase());
+  assert.equal(model._users[0].privyUserId, "did:privy:student-1");
+});
+
+test("wallet binding rejects wallets not linked to the Privy session", async () => {
+  const studentHash = await bcrypt.hash("StudentPass123!", 12);
+  const userModel = createFakeUserModel([
+    {
+      id: "student-1",
+      username: "student",
+      email: "student@rub.edu.bt",
+      passwordHash: studentHash,
+      role: "student",
+      name: "Student",
+    },
+  ]);
+
+  const { app, userModel: model } = createTestApp({
+    userModel,
+    verifyPrivyAccessToken: async () => ({
+      privyUserId: "did:privy:student-1",
+      walletAddresses: ["0x8ba1f109551bD432803012645Ac136ddd64DBA72"],
+    }),
+  });
+  const agent = request.agent(app);
+
+  await agent.post("/api/auth/login").send({
+    identifier: "student",
+    password: "StudentPass123!",
+  });
+
+  const response = await agent
+    .post("/api/student/wallet/bind")
+    .set("Authorization", "Bearer privy-token")
+    .send({ walletAddress: "0x1111111111111111111111111111111111111111" });
+
+  assert.equal(response.status, 403);
+  assert.match(response.body.message, /not linked to the signed-in Privy user/);
+  assert.equal(model._users[0].walletAddress, undefined);
+});
+
+test("wallet binding prevents one wallet from being linked to two students", async () => {
+  const studentHash = await bcrypt.hash("StudentPass123!", 12);
+  const walletAddress = "0x8ba1f109551bD432803012645Ac136ddd64DBA72";
+  const userModel = createFakeUserModel([
+    {
+      id: "student-1",
+      username: "student",
+      email: "student@rub.edu.bt",
+      passwordHash: studentHash,
+      role: "student",
+      name: "Student",
+    },
+    {
+      id: "student-2",
+      username: "linked",
+      email: "linked@rub.edu.bt",
+      passwordHash: studentHash,
+      role: "student",
+      name: "Linked Student",
+      walletAddress,
+      walletAddressNormalized: walletAddress.toLowerCase(),
+      privyUserId: "did:privy:student-2",
+      walletVerifiedAt: new Date(),
+    },
+  ]);
+
+  const { app } = createTestApp({
+    userModel,
+    verifyPrivyAccessToken: async () => ({
+      privyUserId: "did:privy:student-1",
+      walletAddresses: [walletAddress],
+    }),
+  });
+  const agent = request.agent(app);
+
+  await agent.post("/api/auth/login").send({
+    identifier: "student",
+    password: "StudentPass123!",
+  });
+
+  const response = await agent
+    .post("/api/student/wallet/bind")
+    .set("Authorization", "Bearer privy-token")
+    .send({ walletAddress });
+
+  assert.equal(response.status, 409);
+  assert.equal(response.body.message, "Wallet is already linked to another student");
+});
+
+test("admin session can issue certificates", async () => {
+  const userModel = await createAdminModel();
 
   let issuedPayload = null;
   const issueCertificate = async (payload) => {
@@ -173,18 +429,117 @@ test("admin session can issue certificates", async () => {
   assert.equal(issuedPayload.certificateType, "Bachelor of Science");
 });
 
-test("admin session can bulk issue certificates", async () => {
-  const adminHash = await bcrypt.hash("AdminPass123!", 12);
+test("issue endpoint rejects invalid wallet address before issuing", async () => {
+  const userModel = await createAdminModel();
+
+  let issueCalls = 0;
+  const issueCertificate = async () => {
+    issueCalls += 1;
+    return { txHash: "0xissued" };
+  };
+
+  const { app } = createTestApp({ userModel, issueCertificate });
+  const agent = request.agent(app);
+
+  await loginAdmin(agent);
+
+  const issueResponse = await agent.post("/api/certificates/issue").send({
+    studentName: "Recipient",
+    studentEmail: "recipient@rub.edu.bt",
+    studentWalletAddress: "not-a-wallet",
+    certificateType: "Bachelor of Science",
+  });
+
+  assert.equal(issueResponse.status, 400);
+  assert.equal(issueResponse.body.message, "Invalid student wallet address");
+  assert.equal(issueCalls, 0);
+});
+
+test("student session cannot access certificate templates", async () => {
+  const studentHash = await bcrypt.hash("StudentPass123!", 12);
   const userModel = createFakeUserModel([
     {
-      id: "admin-1",
-      username: "admin",
-      email: "admin@college.edu",
-      passwordHash: adminHash,
-      role: "admin",
-      name: "Admin",
+      id: "student-1",
+      username: "student",
+      email: "student@rub.edu.bt",
+      passwordHash: studentHash,
+      role: "student",
+      name: "Student",
     },
   ]);
+
+  const { app } = createTestApp({ userModel });
+  const agent = request.agent(app);
+
+  const loginResponse = await agent.post("/api/auth/login").send({
+    identifier: "student",
+    password: "StudentPass123!",
+  });
+
+  assert.equal(loginResponse.status, 200);
+
+  const response = await agent.get("/api/templates");
+  assert.equal(response.status, 403);
+});
+
+test("admin can create, update, duplicate, and delete certificate templates", async () => {
+  const userModel = await createAdminModel();
+  const { app, templateModel } = createTestApp({ userModel });
+  const agent = request.agent(app);
+
+  await loginAdmin(agent);
+
+  const createResponse = await agent.post("/api/templates").send({
+    name: "Excellence Award",
+    category: "Achievement",
+    description: "Awarded for academic excellence",
+    title: "Certificate of Excellence",
+    subtitle: "This is to certify that",
+    body: "has shown outstanding achievement",
+    footer: "Issued by CertiChain",
+    color: "from-blue-400 to-blue-600",
+  });
+
+  assert.equal(createResponse.status, 201);
+  assert.ok(createResponse.body.template.id.startsWith("template-"));
+  assert.equal(createResponse.body.template.name, "Excellence Award");
+  assert.equal(templateModel._templates.length, 1);
+
+  const templateId = createResponse.body.template.id;
+
+  const listResponse = await agent.get("/api/templates");
+  assert.equal(listResponse.status, 200);
+  assert.equal(listResponse.body.templates.length, 1);
+  assert.equal(listResponse.body.templates[0].id, templateId);
+
+  const updateResponse = await agent.put(`/api/templates/${templateId}`).send({
+    name: "Updated Award",
+    category: "Academic",
+    description: "Updated description",
+    title: "Updated Title",
+    subtitle: "Presented to",
+    body: "for excellent work",
+    footer: "Registrar",
+    color: "from-green-400 to-green-600",
+  });
+
+  assert.equal(updateResponse.status, 200);
+  assert.equal(updateResponse.body.template.name, "Updated Award");
+  assert.equal(updateResponse.body.template.title, "Updated Title");
+
+  const duplicateResponse = await agent.post(`/api/templates/${templateId}/duplicate`);
+  assert.equal(duplicateResponse.status, 201);
+  assert.notEqual(duplicateResponse.body.template.id, templateId);
+  assert.equal(duplicateResponse.body.template.name, "Updated Award Copy");
+  assert.equal(templateModel._templates.length, 2);
+
+  const deleteResponse = await agent.delete(`/api/templates/${templateId}`);
+  assert.equal(deleteResponse.status, 204);
+  assert.equal(templateModel._templates.length, 1);
+});
+
+test("admin session can bulk issue certificates", async () => {
+  const userModel = await createAdminModel();
 
   const issuedPayloads = [];
   const issueCertificate = async (payload) => {
@@ -195,12 +550,7 @@ test("admin session can bulk issue certificates", async () => {
   const { app } = createTestApp({ userModel, issueCertificate });
   const agent = request.agent(app);
 
-  const loginResponse = await agent.post("/api/auth/login").send({
-    identifier: "admin",
-    password: "AdminPass123!",
-  });
-
-  assert.equal(loginResponse.status, 200);
+  await loginAdmin(agent);
 
   const issueResponse = await agent.post("/api/certificates/bulk-issue").send({
     certificateType: "Bachelor of Science",

@@ -1,10 +1,12 @@
 import { useState } from "react";
-import { Upload, Users, Award, Plus, Trash2, CheckCircle, XCircle } from "lucide-react";
+import { isAddress } from "ethers";
+import { Upload, Users, Award, Plus, Trash2, CheckCircle, XCircle, Download } from "lucide-react";
 import { Card } from "./ui/card";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { toast } from "sonner";
+import { API_BASE_URL, parseApiError } from "../lib/api";
 import { getReadableError } from "../lib/certificateRegistry";
 import {
   EmptyState,
@@ -13,8 +15,6 @@ import {
   subtlePanelClass,
 } from "./ui/app-primitives";
 import { cn } from "./ui/utils";
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.trim() || "http://localhost:4000/api";
 
 interface Student {
   id: string;
@@ -42,6 +42,9 @@ interface BulkIssueResponse {
   }>;
 }
 
+const MAX_BULK_STUDENTS = 100;
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 const createEmptyStudent = (): Student => ({
   id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
   name: "",
@@ -50,6 +53,25 @@ const createEmptyStudent = (): Student => ({
   studentId: "",
   grade: "",
 });
+
+const getDuplicateValues = (values: string[]): string[] => {
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+
+  values
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean)
+    .forEach((value) => {
+      if (seen.has(value)) {
+        duplicates.add(value);
+        return;
+      }
+
+      seen.add(value);
+    });
+
+  return Array.from(duplicates);
+};
 
 const parseCsv = (text: string): string[][] => {
   const rows: string[][] = [];
@@ -180,11 +202,40 @@ export function BulkIssueCertificate() {
       return;
     }
 
+    if (students.length > MAX_BULK_STUDENTS) {
+      toast.error(`Bulk issue supports up to ${MAX_BULK_STUDENTS} students at once`);
+      return;
+    }
+
     const invalidStudents = students.filter((student) => {
       return !student.name.trim() || !student.email.trim() || !student.walletAddress.trim();
     });
     if (invalidStudents.length > 0) {
       toast.error("Every student needs a name, email, and wallet address");
+      return;
+    }
+
+    const invalidEmails = students.filter((student) => !emailPattern.test(student.email.trim()));
+    if (invalidEmails.length > 0) {
+      toast.error(`Fix invalid email in row ${students.indexOf(invalidEmails[0]) + 1}`);
+      return;
+    }
+
+    const invalidWallets = students.filter((student) => !isAddress(student.walletAddress.trim()));
+    if (invalidWallets.length > 0) {
+      toast.error(`Fix invalid wallet address in row ${students.indexOf(invalidWallets[0]) + 1}`);
+      return;
+    }
+
+    const duplicateEmails = getDuplicateValues(students.map((student) => student.email));
+    if (duplicateEmails.length > 0) {
+      toast.error(`Duplicate email found: ${duplicateEmails[0]}`);
+      return;
+    }
+
+    const duplicateWallets = getDuplicateValues(students.map((student) => student.walletAddress));
+    if (duplicateWallets.length > 0) {
+      toast.error(`Duplicate wallet found: ${duplicateWallets[0]}`);
       return;
     }
 
@@ -206,12 +257,11 @@ export function BulkIssueCertificate() {
         }),
       });
 
-      const payload = await response.json() as BulkIssueResponse | { message?: string };
       if (!response.ok) {
-        throw new Error("message" in payload ? payload.message || "Bulk issue failed" : "Bulk issue failed");
+        throw new Error(await parseApiError(response));
       }
 
-      const result = payload as BulkIssueResponse;
+      const result = await response.json() as BulkIssueResponse;
       setLastResult(result);
 
       if (result.failedCount > 0) {
@@ -227,6 +277,20 @@ export function BulkIssueCertificate() {
     }
   };
 
+  const handleDownloadTemplate = () => {
+    const csv = [
+      "name,email,walletAddress,studentId,grade",
+      "Student Name,student@college.edu,0x0000000000000000000000000000000000000000,STU-001,A",
+    ].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "bulk-certificate-template.csv";
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -239,6 +303,11 @@ export function BulkIssueCertificate() {
       const importedStudents = studentsFromCsv(await file.text());
       if (importedStudents.length === 0) {
         toast.error("CSV must include headers for name, email, and wallet address");
+        return;
+      }
+
+      if (students.length + importedStudents.length > MAX_BULK_STUDENTS) {
+        toast.error(`Bulk issue supports up to ${MAX_BULK_STUDENTS} students at once`);
         return;
       }
 
@@ -315,25 +384,31 @@ export function BulkIssueCertificate() {
               <p className="text-sm text-gray-500 mb-4">
                 Headers: name, email, walletAddress, studentId, grade
               </p>
-              <label>
-                <input
-                  type="file"
-                  accept=".csv,text/csv"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                />
-                <Button variant="outline" className="gap-2" asChild>
-                  <span>
-                    <Upload className="w-4 h-4" />
-                    Choose CSV
-                  </span>
+              <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
+                <label>
+                  <input
+                    type="file"
+                    accept=".csv,text/csv"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+                  <Button variant="outline" className="gap-2" asChild>
+                    <span>
+                      <Upload className="w-4 h-4" />
+                      Choose CSV
+                    </span>
+                  </Button>
+                </label>
+                <Button type="button" variant="outline" className="gap-2" onClick={handleDownloadTemplate}>
+                  <Download className="w-4 h-4" />
+                  Download Template
                 </Button>
-              </label>
+              </div>
             </div>
           </Card>
 
           <Card className={cn("p-6", subtlePanelClass)}>
-            <div className="flex items-center justify-between mb-4">
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <h2 className="text-xl text-gray-900">Student Details</h2>
               <Button onClick={addStudent} variant="outline" size="sm" className="gap-2">
                 <Plus className="w-4 h-4" />
@@ -397,7 +472,7 @@ export function BulkIssueCertificate() {
 
           <Button
             onClick={handleBulkIssue}
-            disabled={isSubmitting}
+            disabled={isSubmitting || students.length === 0 || students.length > MAX_BULK_STUDENTS}
             className={`w-full gap-2 ${primaryActionClass}`}
           >
             <Award className="w-4 h-4" />
@@ -413,11 +488,11 @@ export function BulkIssueCertificate() {
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-gray-600">Total Students</span>
-                <span className="text-gray-900 font-medium">{students.length}</span>
+                <span className="text-gray-900 font-medium">{students.length}/{MAX_BULK_STUDENTS}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-gray-600">Certificate</span>
-                <span className="text-gray-900 font-medium text-right">{certificateType || "Not specified"}</span>
+                <span className="text-right font-medium text-gray-900 break-words">{certificateType || "Not specified"}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-gray-600">Department</span>
@@ -431,11 +506,19 @@ export function BulkIssueCertificate() {
               </div>
             </div>
 
-            <div className="mt-6 p-4 bg-blue-50 rounded-lg">
-              <div className="flex items-center gap-2 text-blue-700">
+            <div className={cn(
+              "mt-6 rounded-lg p-4",
+              students.length > MAX_BULK_STUDENTS ? "bg-red-50" : "bg-blue-50",
+            )}>
+              <div className={cn(
+                "flex items-center gap-2",
+                students.length > MAX_BULK_STUDENTS ? "text-red-700" : "text-blue-700",
+              )}>
                 <Users className="w-5 h-5" />
                 <span className="text-sm font-medium">
-                  Ready to issue {students.length} certificate{students.length === 1 ? "" : "s"}
+                  {students.length > MAX_BULK_STUDENTS
+                    ? `Remove ${students.length - MAX_BULK_STUDENTS} student${students.length - MAX_BULK_STUDENTS === 1 ? "" : "s"} before issuing`
+                    : `Ready to issue ${students.length} certificate${students.length === 1 ? "" : "s"}`}
                 </span>
               </div>
             </div>

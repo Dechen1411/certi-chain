@@ -1,6 +1,7 @@
 import {
   Contract,
   JsonRpcProvider,
+  isAddress,
   keccak256,
   toUtf8Bytes,
 } from "ethers";
@@ -12,6 +13,9 @@ const registryAbi = [
   "event CertificateIssued(uint256 indexed tokenId, address indexed student, bytes32 indexed certificateHash, string tokenURI)",
   "event CertificateRevoked(uint256 indexed tokenId, bytes32 indexed certificateHash, string reason)",
 ] as const;
+
+const DEFAULT_EVENT_LOOKBACK_BLOCKS = 10;
+const DEFAULT_EVENT_QUERY_CHUNK_BLOCKS = 10;
 
 export interface StudentCertificateRecord {
   tokenId: string;
@@ -56,9 +60,49 @@ const getRpcUrl = (): string => {
   return rpcUrl;
 };
 
-const getReadProvider = (): JsonRpcProvider => {
+const getChainId = (): number => {
   const configuredChainId = Number(import.meta.env.VITE_CHAIN_ID || 31337);
-  return new JsonRpcProvider(getRpcUrl(), configuredChainId, {
+  if (!Number.isInteger(configuredChainId) || configuredChainId <= 0) {
+    throw new Error("Invalid VITE_CHAIN_ID in frontend environment");
+  }
+  return configuredChainId;
+};
+
+const getOptionalPositiveIntegerEnv = (value: string | undefined): number | null => {
+  if (!value?.trim()) {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
+};
+
+const getEventQueryStartBlock = (latestBlock: number): number => {
+  const deploymentBlock = getOptionalPositiveIntegerEnv(
+    import.meta.env.VITE_CERTIFICATE_REGISTRY_DEPLOYMENT_BLOCK,
+  );
+
+  if (deploymentBlock !== null) {
+    return Math.min(deploymentBlock, latestBlock);
+  }
+
+  const lookbackBlocks = getOptionalPositiveIntegerEnv(
+    import.meta.env.VITE_EVENT_LOOKBACK_BLOCKS,
+  ) ?? DEFAULT_EVENT_LOOKBACK_BLOCKS;
+
+  return Math.max(0, latestBlock - lookbackBlocks);
+};
+
+const getEventQueryChunkSize = (): number => {
+  const configuredChunkSize = getOptionalPositiveIntegerEnv(
+    import.meta.env.VITE_EVENT_QUERY_CHUNK_BLOCKS,
+  ) ?? DEFAULT_EVENT_QUERY_CHUNK_BLOCKS;
+
+  return Math.max(1, configuredChunkSize);
+};
+
+const getReadProvider = (): JsonRpcProvider => {
+  return new JsonRpcProvider(getRpcUrl(), getChainId(), {
     staticNetwork: true,
   });
 };
@@ -145,19 +189,34 @@ const sortCertificates = (certificates: StudentCertificateRecord[]): StudentCert
   });
 };
 
+type CertificateIssuedLog = {
+  args?: readonly unknown[];
+};
+
 const getCertificatesFromFilter = async (
   filter: ReturnType<Contract["filters"]["CertificateIssued"]>,
 ): Promise<StudentCertificateRecord[]> => {
   const contract = getRegistryReadContract();
-  const logs = await contract.queryFilter(filter, 0, "latest");
+  const provider = getReadProvider();
+  const latestBlock = await provider.getBlockNumber();
+  const startBlock = getEventQueryStartBlock(latestBlock);
+  const queryChunkSize = getEventQueryChunkSize();
+  const logs: CertificateIssuedLog[] = [];
+
+  for (let fromBlock = startBlock; fromBlock <= latestBlock; fromBlock += queryChunkSize) {
+    const toBlock = Math.min(fromBlock + queryChunkSize - 1, latestBlock);
+    const chunk = await contract.queryFilter(filter, fromBlock, toBlock);
+    logs.push(...(chunk as CertificateIssuedLog[]));
+  }
 
   const certificates: Array<StudentCertificateRecord | null> = await Promise.all(
     logs.map(async (log) => {
-      if (!("args" in log) || !log.args || log.args.length === 0) {
+      const args = log.args;
+      if (!Array.isArray(args) || args.length === 0) {
         return null;
       }
 
-      const tokenId = log.args[0] as bigint;
+      const tokenId = args[0] as bigint;
       return toCertificateRecord(contract, tokenId);
     }),
   );
@@ -175,6 +234,9 @@ export const getStudentCertificates = async (
   const normalizedAddress = studentWalletAddress.trim();
   if (!normalizedAddress) {
     return [];
+  }
+  if (!isAddress(normalizedAddress)) {
+    throw new Error("Invalid student wallet address");
   }
 
   const contract = getRegistryReadContract();

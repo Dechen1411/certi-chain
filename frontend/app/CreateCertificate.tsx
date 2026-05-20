@@ -34,6 +34,8 @@ export function CreateCertificate() {
   const [searchParams] = useSearchParams();
   const templateId = searchParams.get("templateId") || "";
   const [certificateData, setCertificateData] = useState(emptyTemplate);
+  const [isLoadingTemplate, setIsLoadingTemplate] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (!templateId) {
@@ -41,22 +43,33 @@ export function CreateCertificate() {
       return;
     }
 
-    const template = getCertificateTemplate(templateId);
-    if (!template) {
-      toast.error("Template not found");
-      return;
-    }
+    const loadTemplate = async () => {
+      setIsLoadingTemplate(true);
+      try {
+        const template = await getCertificateTemplate(templateId);
+        if (!template) {
+          toast.error("Template not found");
+          return;
+        }
 
-    setCertificateData({
-      name: template.name,
-      category: template.category,
-      description: template.description,
-      title: template.title,
-      subtitle: template.subtitle,
-      body: template.body,
-      footer: template.footer,
-      color: template.color,
-    });
+        setCertificateData({
+          name: template.name,
+          category: template.category,
+          description: template.description,
+          title: template.title,
+          subtitle: template.subtitle,
+          body: template.body,
+          footer: template.footer,
+          color: template.color,
+        });
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Unable to load template");
+      } finally {
+        setIsLoadingTemplate(false);
+      }
+    };
+
+    void loadTemplate();
   }, [templateId]);
 
   const colorOptions = [
@@ -68,19 +81,26 @@ export function CreateCertificate() {
     { value: "from-indigo-400 to-indigo-600", label: "Indigo", className: "bg-gradient-to-r from-indigo-400 to-indigo-600" },
   ];
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!certificateData.name.trim() || !certificateData.title.trim()) {
       toast.error("Template name and title are required");
       return;
     }
 
-    saveCertificateTemplate({
-      id: templateId || undefined,
-      ...certificateData,
-    });
+    setIsSaving(true);
+    try {
+      await saveCertificateTemplate({
+        id: templateId || undefined,
+        ...certificateData,
+      });
 
-    toast.success(templateId ? "Template updated" : "Template saved");
-    navigate("/admin/dashboard/templates");
+      toast.success(templateId ? "Template updated" : "Template saved");
+      navigate("/admin/dashboard/templates");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to save template");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -196,11 +216,12 @@ export function CreateCertificate() {
 
           <div className="flex gap-3">
             <Button
-              onClick={handleSave}
+              onClick={() => void handleSave()}
+              disabled={isSaving || isLoadingTemplate}
               className={`flex-1 gap-2 ${primaryActionClass}`}
             >
               <Save className="w-4 h-4" />
-              Save Template
+              {isSaving ? "Saving..." : "Save Template"}
             </Button>
             <Button
               type="button"

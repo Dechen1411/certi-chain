@@ -63,7 +63,7 @@ export function Certificates() {
     <div className="space-y-6">
       <PageHeader
         title="Issued Certificates"
-        description="Search and review certificates recorded on-chain."
+        description="Search and review issued certificate records."
         actions={
           <>
           <Button variant="outline" className="gap-2" onClick={() => void loadCertificates()} disabled={isLoading}>
@@ -101,8 +101,8 @@ export function Certificates() {
               title={isLoading ? "Loading certificates" : "No certificates found"}
               description={
                 isLoading
-                  ? "Fetching certificate records from the blockchain."
-                  : "Issued certificates will appear here after successful transactions."
+                  ? "Loading issued certificate records."
+                  : "Issued certificates will appear here after successful issues."
               }
             />
           </Card>

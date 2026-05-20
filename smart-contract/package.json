@@ -2,6 +2,17 @@
   "name": "certificate-system-smart-contract",
   "version": "1.0.0",
   "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "overrides": {
+    "ethers": {
+      "ws": "8.20.1"
+    },
+    "@ethersproject/providers": {
+      "ws": "8.20.1"
+    }
+  },
   "scripts": {
     "compile": "hardhat compile",
     "test": "hardhat test",
@@ -11,7 +22,8 @@
     "deploy:sepolia": "hardhat run scripts/deploy.js --network sepolia"
   },
   "devDependencies": {
-    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@nomicfoundation/hardhat-chai-matchers": "^2.1.0",
+    "@nomicfoundation/hardhat-ethers": "^3.1.0",
     "dotenv": "^16.4.5",
     "hardhat": "^2.22.16"
   },

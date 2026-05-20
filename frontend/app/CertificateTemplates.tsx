@@ -25,20 +25,30 @@ export function CertificateTemplates() {
   const [searchTerm, setSearchTerm] = useState("");
   const [templates, setTemplates] = useState<CertificateTemplate[]>([]);
   const [previewTemplate, setPreviewTemplate] = useState<CertificateTemplate | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const refreshTemplates = () => {
-    const nextTemplates = getCertificateTemplates();
-    setTemplates(nextTemplates);
-    setPreviewTemplate((current) => {
-      if (!current) {
-        return nextTemplates[0] || null;
-      }
-      return nextTemplates.find((template) => template.id === current.id) || nextTemplates[0] || null;
-    });
+  const refreshTemplates = async () => {
+    setIsLoading(true);
+    try {
+      const nextTemplates = await getCertificateTemplates();
+      setTemplates(nextTemplates);
+      setPreviewTemplate((current) => {
+        if (!current) {
+          return nextTemplates[0] || null;
+        }
+        return nextTemplates.find((template) => template.id === current.id) || nextTemplates[0] || null;
+      });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to load templates");
+      setTemplates([]);
+      setPreviewTemplate(null);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   useEffect(() => {
-    refreshTemplates();
+    void refreshTemplates();
   }, []);
 
   const filteredTemplates = templates.filter((template) =>
@@ -47,27 +57,35 @@ export function CertificateTemplates() {
     template.category.toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
-  const handleDuplicate = (id: string) => {
-    const duplicated = duplicateCertificateTemplate(id);
-    if (!duplicated) {
-      toast.error("Template not found");
-      return;
-    }
+  const handleDuplicate = async (id: string) => {
+    try {
+      const duplicated = await duplicateCertificateTemplate(id);
+      if (!duplicated) {
+        toast.error("Template not found");
+        return;
+      }
 
-    toast.success("Template copied");
-    refreshTemplates();
-    setPreviewTemplate(duplicated);
+      toast.success("Template copied");
+      await refreshTemplates();
+      setPreviewTemplate(duplicated);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to copy template");
+    }
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     const confirmed = window.confirm("Delete this certificate template?");
     if (!confirmed) {
       return;
     }
 
-    deleteCertificateTemplate(id);
-    toast.success("Template deleted");
-    refreshTemplates();
+    try {
+      await deleteCertificateTemplate(id);
+      toast.success("Template deleted");
+      await refreshTemplates();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to delete template");
+    }
   };
 
   return (
@@ -100,7 +118,15 @@ export function CertificateTemplates() {
 
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_380px] gap-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {filteredTemplates.length === 0 ? (
+          {isLoading ? (
+            <Card className={cn("p-8 md:col-span-2", subtlePanelClass)}>
+              <EmptyState
+                icon={Award}
+                title="Loading templates"
+                description="Loading saved certificate templates."
+              />
+            </Card>
+          ) : filteredTemplates.length === 0 ? (
             <Card className={cn("p-8 md:col-span-2", subtlePanelClass)}>
               <EmptyState
                 icon={Award}
@@ -161,7 +187,7 @@ export function CertificateTemplates() {
                     variant="outline"
                     size="sm"
                     className="gap-2"
-                    onClick={() => handleDuplicate(template.id)}
+                    onClick={() => void handleDuplicate(template.id)}
                   >
                     <Copy className="w-4 h-4" />
                   </Button>
@@ -169,7 +195,7 @@ export function CertificateTemplates() {
                     variant="outline"
                     size="sm"
                     className="gap-2 text-red-600 hover:text-red-700"
-                    onClick={() => handleDelete(template.id)}
+                    onClick={() => void handleDelete(template.id)}
                   >
                     <Trash2 className="w-4 h-4" />
                   </Button>

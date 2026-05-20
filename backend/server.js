@@ -5,7 +5,8 @@ const fs = require("fs");
 const path = require("path");
 const { createApp } = require("./app");
 const { issueCertificateOnChain } = require("./blockchainIssuer");
-const { User, connectDb } = require("./db");
+const { CertificateTemplate, User, connectDb } = require("./db");
+const { createPrivyAccessTokenVerifier } = require("./privy");
 
 const PORT = Number(process.env.PORT || 4000);
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || process.env.RENDER_EXTERNAL_URL || "http://localhost:5173";
@@ -16,6 +17,10 @@ const MONGODB_URI = process.env.MONGODB_URI || "";
 const CHAIN_RPC_URL = process.env.CHAIN_RPC_URL || "";
 const CERTIFICATE_REGISTRY_ADDRESS = process.env.CERTIFICATE_REGISTRY_ADDRESS || "";
 const ISSUER_PRIVATE_KEY = process.env.ISSUER_PRIVATE_KEY || "";
+const PRIVY_APP_ID = process.env.PRIVY_APP_ID || process.env.VITE_PRIVY_APP_ID || "";
+const PRIVY_APP_SECRET = process.env.PRIVY_APP_SECRET || "";
+const PRIVY_API_URL = process.env.PRIVY_API_URL || "";
+const PRIVY_JWT_VERIFICATION_KEY = process.env.PRIVY_JWT_VERIFICATION_KEY || "";
 const STATIC_ROOT = process.env.STATIC_ROOT || path.resolve(__dirname, "..", "frontend", "dist");
 const staticRoot = process.env.NODE_ENV === "production" && fs.existsSync(path.join(STATIC_ROOT, "index.html"))
   ? STATIC_ROOT
@@ -57,6 +62,7 @@ const seedAdminUserIfConfigured = async () => {
 };
 
 const app = createApp({
+  CertificateTemplate,
   User,
   issueCertificate: (certificate) => issueCertificateOnChain(certificate, {
     chainRpcUrl: CHAIN_RPC_URL,
@@ -69,15 +75,19 @@ const app = createApp({
   allowedStudentDomain: ALLOWED_STUDENT_DOMAIN,
   isProduction: process.env.NODE_ENV === "production",
   staticRoot,
+  verifyPrivyAccessToken: createPrivyAccessTokenVerifier({
+    appId: PRIVY_APP_ID,
+    appSecret: PRIVY_APP_SECRET,
+    apiUrl: PRIVY_API_URL,
+    jwtVerificationKey: PRIVY_JWT_VERIFICATION_KEY,
+  }),
 });
 
 const startServer = async () => {
   await connectDb(MONGODB_URI);
   await seedAdminUserIfConfigured();
 
-  app.listen(PORT, () => {
-    console.log(`Auth API listening on port ${PORT}`);
-  });
+  app.listen(PORT);
 };
 
 startServer().catch((error) => {

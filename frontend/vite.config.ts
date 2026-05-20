@@ -4,6 +4,22 @@ import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  build: {
+    chunkSizeWarningLimit: 1600,
+    rollupOptions: {
+      onwarn(warning, warn) {
+        if (
+          warning.code === "INVALID_ANNOTATION" &&
+          typeof warning.id === "string" &&
+          warning.id.includes("node_modules")
+        ) {
+          return;
+        }
+
+        warn(warning);
+      },
+    },
+  },
   server: {
     headers: {
       "X-Content-Type-Options": "nosniff",

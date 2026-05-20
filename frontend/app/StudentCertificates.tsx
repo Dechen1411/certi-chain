@@ -3,6 +3,7 @@ import { Award, Copy, Download, Eye, QrCode } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { Card } from "./ui/card";
 import { Button } from "./ui/button";
+import { Link } from "react-router";
 import {
   getReadableError,
   getStudentCertificates,
@@ -22,16 +23,14 @@ import {
   subtlePanelClass,
 } from "./ui/app-primitives";
 import { cn } from "./ui/utils";
+import { useAuth } from "../context/AuthContext";
+import { isPrivyConfigured } from "../lib/privy";
 
 export function StudentCertificates() {
+  const { user } = useAuth();
   const [certificates, setCertificates] = useState<StudentCertificateRecord[]>([]);
-  const [walletAddress, setWalletAddress] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-
-  useEffect(() => {
-    const savedWallet = localStorage.getItem("certifypro_student_wallet") || "";
-    setWalletAddress(savedWallet);
-  }, []);
+  const walletAddress = user?.walletAddress || "";
 
   useEffect(() => {
     if (!walletAddress) {
@@ -76,7 +75,7 @@ export function StudentCertificates() {
     <div className="space-y-6">
       <PageHeader
         title="My Certificates"
-        description="View, share, and download your blockchain-verified certificates."
+        description="View, share, and download your verified certificates."
       />
 
       <div className="grid grid-cols-1 gap-6">
@@ -86,11 +85,20 @@ export function StudentCertificates() {
               icon={Award}
               title={isLoading ? "Loading certificates" : "No certificates yet"}
               description={
-                !walletAddress
-                  ? "Create your student wallet first in the dashboard, then share it with admin."
+                !isPrivyConfigured
+                  ? "Wallet connection is temporarily unavailable. Please contact the administrator."
+                  : !walletAddress
+                  ? "Verify your wallet from the dashboard to view your certificates."
                   : isLoading
-                  ? "Fetching your certificate records from the blockchain."
+                  ? "Loading your certificate records."
                   : "Certificates issued to your wallet will appear here."
+              }
+              action={
+                isPrivyConfigured && !walletAddress ? (
+                  <Link to="/student/dashboard">
+                    <Button className={primaryActionClass}>Open Dashboard</Button>
+                  </Link>
+                ) : undefined
               }
             />
           </Card>
@@ -137,7 +145,7 @@ export function StudentCertificates() {
                         </div>
                       )}
                       <div className="md:col-span-2">
-                        <label className="text-sm text-gray-600">NFT Hash</label>
+                        <label className="text-sm text-gray-600">Verification Hash</label>
                         <p className="text-gray-900 font-mono text-xs break-all">
                           {cert.nftHash}
                         </p>
@@ -217,7 +225,7 @@ export function StudentCertificates() {
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-blue-600 mt-1">-</span>
-                <span>All certificates are secured on the blockchain</span>
+                <span>Each certificate can be verified online</span>
               </li>
             </ul>
           </div>

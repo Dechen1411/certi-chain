@@ -1,11 +1,10 @@
-import { useEffect, useState } from "react";
-import { Award, Download, Eye, FileText, Wallet, Copy, RefreshCcw } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Award, Copy, Download, Eye, FileText } from "lucide-react";
 import { Card } from "./ui/card";
 import { Button } from "./ui/button";
 import { Link } from "react-router";
-import { useAuth } from "../context/AuthContext";
+import { useAuth, type User } from "../context/AuthContext";
 import { toast } from "sonner";
-import { Wallet as EthersWallet } from "ethers";
 import {
   getReadableError,
   getStudentCertificates,
@@ -24,24 +23,24 @@ import {
   subtlePanelClass,
 } from "./ui/app-primitives";
 import { cn } from "./ui/utils";
+import { isPrivyConfigured } from "../lib/privy";
+import { PrivyStudentWalletActions } from "./PrivyStudentWallet";
 
 export function StudentDashboard() {
-  const { user } = useAuth();
-  const [walletAddress, setWalletAddress] = useState<string>("");
-  const [walletPrivateKey, setWalletPrivateKey] = useState<string>("");
-  const [isConnectingWallet, setIsConnectingWallet] = useState(false);
+  const { refreshUser, user } = useAuth();
+  const verifiedWalletAddress = user?.walletAddress || "";
+  const [connectedWalletAddress, setConnectedWalletAddress] = useState<string>("");
   const [recentCertificates, setRecentCertificates] = useState<StudentCertificateRecord[]>([]);
   const [totalCertificates, setTotalCertificates] = useState(0);
   const [isLoadingCertificates, setIsLoadingCertificates] = useState(false);
-  const isWalletConnected = Boolean(walletAddress);
+  const displayedWalletAddress = verifiedWalletAddress || connectedWalletAddress;
 
   useEffect(() => {
-    const savedWallet = localStorage.getItem("certifypro_student_wallet") || "";
-    setWalletAddress(savedWallet);
-  }, []);
+    setConnectedWalletAddress(verifiedWalletAddress);
+  }, [verifiedWalletAddress]);
 
   useEffect(() => {
-    if (!walletAddress) {
+    if (!verifiedWalletAddress) {
       setRecentCertificates([]);
       setTotalCertificates(0);
       return;
@@ -50,7 +49,7 @@ export function StudentDashboard() {
     const loadCertificates = async () => {
       setIsLoadingCertificates(true);
       try {
-        const certificates = await getStudentCertificates(walletAddress);
+        const certificates = await getStudentCertificates(verifiedWalletAddress);
         setTotalCertificates(certificates.length);
         setRecentCertificates(certificates.slice(0, 3));
       } catch (error) {
@@ -61,57 +60,26 @@ export function StudentDashboard() {
     };
 
     void loadCertificates();
-  }, [walletAddress]);
+  }, [verifiedWalletAddress]);
 
-  const handleConnectWallet = async () => {
-    setIsConnectingWallet(true);
-    try {
-      const wallet = EthersWallet.createRandom();
-      setWalletAddress(wallet.address);
-      setWalletPrivateKey(wallet.privateKey);
-      localStorage.setItem("certifypro_student_wallet", wallet.address);
-      toast.success("Student wallet created successfully. Back up your private key now.");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to create wallet";
-      toast.error(message);
-    } finally {
-      setIsConnectingWallet(false);
-    }
-  };
+  const handleWalletAddressChange = useCallback((address: string) => {
+    setConnectedWalletAddress(address);
+  }, []);
 
-  const handleDisconnectWallet = () => {
-    setWalletAddress("");
-    setWalletPrivateKey("");
-    localStorage.removeItem("certifypro_student_wallet");
-    toast.success("Wallet disconnected");
-  };
+  const handleWalletVerified = useCallback(async (updatedUser: User) => {
+    setConnectedWalletAddress(updatedUser.walletAddress || "");
+    await refreshUser();
+  }, [refreshUser]);
 
-  const handleCopyWallet = async () => {
-    if (!walletAddress) {
-      toast.error("Create your wallet first");
+  const handleCopyWallet = useCallback(async () => {
+    if (!displayedWalletAddress) {
+      toast.error("Connect your wallet first");
       return;
     }
 
-    await navigator.clipboard.writeText(walletAddress);
+    await navigator.clipboard.writeText(displayedWalletAddress);
     toast.success("Wallet address copied");
-  };
-
-  const handleCopyPrivateKey = async () => {
-    if (!walletPrivateKey) {
-      toast.error("Create your wallet first");
-      return;
-    }
-
-    const confirmed = window.confirm(
-      "Copy private key to clipboard? Anyone with this key can control your wallet.",
-    );
-    if (!confirmed) {
-      return;
-    }
-
-    await navigator.clipboard.writeText(walletPrivateKey);
-    toast.success("Private key copied. Keep it safe.");
-  };
+  }, [displayedWalletAddress]);
 
   const handleViewCertificate = (certificate: StudentCertificateRecord) => {
     try {
@@ -138,14 +106,14 @@ export function StudentDashboard() {
         <StatCard
           label="Total Certificates"
           value={totalCertificates}
-          note="Issued to your wallet"
+          note="Available in your account"
           icon={FileText}
           tone="blue"
         />
         <StatCard
           label="Recent Certificates"
           value={recentCertificates.length}
-          note="Latest on-chain records"
+          note="Latest issued certificates"
           icon={Award}
           tone="green"
         />
@@ -153,52 +121,50 @@ export function StudentDashboard() {
 
       {/* Wallet Section */}
       <Card className={cn("p-6", subtlePanelClass)}>
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 className="text-xl text-gray-900 mb-1">Student Wallet Address</h2>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0 flex-1">
+            <h2 className="text-xl text-gray-900 mb-1">Wallet Address</h2>
             <p className="text-sm text-gray-600 mb-4">
-              Share this address with admin so your certificates can be issued to your wallet.
+              Use this address to receive and view your certificates.
             </p>
 
             <div className="p-3 rounded-lg bg-gray-50 border border-gray-200 min-h-12 flex items-center">
               <p className="text-sm text-gray-800 break-all font-mono">
-                {walletAddress || "Wallet not created yet"}
+                {displayedWalletAddress || "Wallet not connected"}
               </p>
             </div>
 
-            {walletPrivateKey && (
-              <div className="mt-3 p-3 rounded-lg bg-amber-50 border border-amber-200">
-                <p className="text-xs text-amber-800 mb-2">
-                  Save your private key securely. Anyone with this key can control this wallet.
-                </p>
-                <p className="text-xs text-amber-900 break-all font-mono">{walletPrivateKey}</p>
+            {verifiedWalletAddress && (
+              <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+                Wallet verified and ready to receive certificates.
+              </div>
+            )}
+
+            {!verifiedWalletAddress && connectedWalletAddress && (
+              <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                Wallet connected. Verify it before certificates appear here.
+              </div>
+            )}
+
+            {!isPrivyConfigured && (
+              <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                Wallet connection is temporarily unavailable. Please contact the administrator.
               </div>
             )}
           </div>
 
-          <div className="flex flex-col gap-2 min-w-[160px]">
-            <Button
-              onClick={isWalletConnected ? handleDisconnectWallet : handleConnectWallet}
-              disabled={isConnectingWallet}
-              className={`gap-2 ${primaryActionClass}`}
-            >
-              {isConnectingWallet ? (
-                <RefreshCcw className="w-4 h-4 animate-spin" />
-              ) : isWalletConnected ? (
-                <RefreshCcw className="w-4 h-4" />
-              ) : (
-                <Wallet className="w-4 h-4" />
-              )}
-              {isWalletConnected ? "Reset Wallet" : "Create Wallet"}
-            </Button>
-            <Button variant="outline" className="gap-2" onClick={handleCopyWallet}>
-              <Copy className="w-4 h-4" />
-              Copy Address
-            </Button>
-            {walletPrivateKey && (
-              <Button variant="outline" className="gap-2" onClick={handleCopyPrivateKey}>
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-[160px]">
+            {isPrivyConfigured ? (
+              <PrivyStudentWalletActions
+                onCopyWallet={handleCopyWallet}
+                onWalletAddressChange={handleWalletAddressChange}
+                onWalletVerified={handleWalletVerified}
+                verifiedWalletAddress={verifiedWalletAddress}
+              />
+            ) : (
+              <Button variant="outline" className="gap-2" disabled>
                 <Copy className="w-4 h-4" />
-                Copy Private Key
+                Copy Address
               </Button>
             )}
           </div>
@@ -223,7 +189,7 @@ export function StudentDashboard() {
               title={isLoadingCertificates ? "Loading certificates" : "No certificates yet"}
               description={
                 isLoadingCertificates
-                  ? "Fetching certificate records from the blockchain."
+                  ? "Loading your certificate records."
                   : "Certificates issued to your wallet will appear here."
               }
             />
@@ -231,14 +197,14 @@ export function StudentDashboard() {
             recentCertificates.map((cert) => (
               <div
                 key={cert.tokenId}
-                className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                className="flex flex-col gap-4 rounded-lg bg-gray-50 p-4 transition-colors hover:bg-gray-100 sm:flex-row sm:items-center sm:justify-between"
               >
-                <div className="flex items-center gap-4">
+                <div className="flex min-w-0 items-center gap-4">
                   <IconBadge icon={Award} tone="blue" className="h-12 w-12" />
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-gray-900 mb-1">{cert.certificateType}</p>
-                    <div className="flex items-center gap-3 text-sm text-gray-600">
-                      <span>ID: {cert.certificateId}</span>
+                    <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
+                      <span className="break-all">ID: {cert.certificateId}</span>
                       <span>-</span>
                       <span>{new Date(cert.issueDate).toLocaleDateString()}</span>
                     </div>
@@ -247,7 +213,7 @@ export function StudentDashboard() {
                     )}
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <Button
                     variant="outline"
                     size="sm"
@@ -278,9 +244,9 @@ export function StudentDashboard() {
         <div className="flex items-start gap-4">
           <IconBadge icon={Award} tone="blue" className="h-12 w-12" />
           <div>
-            <h3 className="text-lg text-gray-900 mb-2">NFT-Backed Certificates</h3>
+            <h3 className="text-lg text-gray-900 mb-2">Verified Certificates</h3>
             <p className="text-gray-600 mb-4">
-              All your certificates are secured on the blockchain as NFTs. Each certificate has a unique QR code and certificate ID that can be verified by employers.
+              Each certificate includes a unique ID and QR code so employers can confirm its authenticity.
             </p>
             <Link to="/student/certificates">
               <Button className={primaryActionClass}>

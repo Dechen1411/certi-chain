@@ -34,9 +34,14 @@ This module implements on-chain certificate issuance and verification.
 
 ## Deploy (sepolia)
 
-1. Configure .env with RPC_URL and PRIVATE_KEY
-2. Run:
+1. Configure `.env` with `RPC_URL` and `PRIVATE_KEY`, or set `CHAIN_RPC_URL`
+   and `ISSUER_PRIVATE_KEY` in `../backend/.env`.
+2. Make sure the deployer wallet has Sepolia ETH for gas.
+3. Run:
    npm run deploy:sepolia
+
+Hardhat enforces Sepolia chain ID `11155111` for this network, so a local RPC URL
+cannot be accidentally used for a Sepolia deployment.
 
 ## Main Contract
 

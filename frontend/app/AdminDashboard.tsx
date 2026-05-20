@@ -64,9 +64,9 @@ export function AdminDashboard() {
 
   const statCards = [
     {
-      label: "On-chain Certificates",
+      label: "Issued Certificates",
       value: stats ? String(stats.totalCertificates) : "--",
-      change: loadError || (isLoading ? "Loading data" : "Issued certificates"),
+      change: loadError || (isLoading ? "Loading data" : "Total issued records"),
       icon: Award,
       tone: "blue" as const,
     },
@@ -80,14 +80,14 @@ export function AdminDashboard() {
     {
       label: "Issued This Month",
       value: stats ? String(stats.issuedThisMonth) : "--",
-      change: "Based on metadata issue date",
+      change: "Based on issue date",
       icon: FileText,
       tone: "purple" as const,
     },
     {
       label: "Revoked",
       value: stats ? String(stats.revokedCertificates) : "--",
-      change: "Marked invalid on-chain",
+      change: "Marked invalid",
       icon: Users,
       tone: "amber" as const,
     },
@@ -134,14 +134,14 @@ export function AdminDashboard() {
       <Card className={cn("p-6", subtlePanelClass)}>
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-xl text-gray-900 mb-1">Server Issuer Status</h2>
+            <h2 className="text-xl text-gray-900 mb-1">Issuer Status</h2>
             <p className="text-sm text-gray-600 mb-4">
-              Certificate signing runs on the backend. Issuer key is never exposed in browser code.
+              Certificates are issued through a protected signing service.
             </p>
 
             <div className="p-3 rounded-lg bg-gray-50 border border-gray-200 min-h-12 flex items-center">
-              <p className="text-sm text-gray-800 break-all font-mono">
-                {loadError ? "Chain read unavailable" : "Active (server-managed)"}
+              <p className="text-sm text-gray-800 break-all">
+                {loadError ? "Verification records unavailable" : "Ready to issue certificates"}
               </p>
             </div>
           </div>
@@ -155,7 +155,7 @@ export function AdminDashboard() {
             <EmptyState
               icon={FileText}
               title={isLoading ? "Loading activity" : "No activity yet"}
-              description={isLoading ? "Fetching recent certificate activity from the chain." : "Issued certificates will appear here after the first successful transaction."}
+              description={isLoading ? "Loading recent issuance activity." : "Issued certificates will appear here after the first successful issue."}
             />
           ) : (
             <div className="space-y-4">

@@ -1,7 +1,9 @@
 const bcrypt = require("bcryptjs");
 const cookieParser = require("cookie-parser");
 const cors = require("cors");
+const { randomInt, randomUUID } = require("crypto");
 const express = require("express");
+const { getAddress, isAddress } = require("ethers");
 const helmet = require("helmet");
 const jwt = require("jsonwebtoken");
 const path = require("path");
@@ -22,7 +24,26 @@ const executeMaybeLean = async (queryResult) => {
 };
 
 const createCertificateId = () => {
-  return `CERT-${new Date().getFullYear()}-${Math.floor(Math.random() * 10000).toString().padStart(4, "0")}`;
+  return `CERT-${new Date().getFullYear()}-${randomInt(0, 1_000_000_000).toString().padStart(9, "0")}`;
+};
+
+const createTemplateId = () => {
+  return `template-${randomUUID()}`;
+};
+
+const parseOriginList = (value) => {
+  return String(value || "")
+    .split(",")
+    .map((origin) => origin.trim().replace(/\/+$/, ""))
+    .filter(Boolean);
+};
+
+const getAllowedOrigins = (frontendOrigin) => {
+  return Array.from(new Set([
+    ...parseOriginList(frontendOrigin),
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+  ]));
 };
 
 const normalizeCertificateInput = (body) => ({
@@ -38,6 +59,53 @@ const normalizeCertificateInput = (body) => ({
   studentId: String(body?.studentId || "").trim(),
 });
 
+const normalizeTemplateInput = (body) => ({
+  name: String(body?.name || "").trim(),
+  category: String(body?.category || "").trim(),
+  description: String(body?.description || "").trim(),
+  title: String(body?.title || "").trim(),
+  subtitle: String(body?.subtitle || "").trim(),
+  body: String(body?.body || "").trim(),
+  footer: String(body?.footer || "").trim(),
+  color: String(body?.color || "").trim() || "from-slate-700 to-slate-900",
+  uses: Number.isFinite(Number(body?.uses)) ? Math.max(0, Number(body.uses)) : undefined,
+});
+
+const getTemplateInputError = (template) => {
+  if (!template.name || !template.title) {
+    return "Template name and title are required";
+  }
+
+  if (template.name.length > 120) {
+    return "Template name must be 120 characters or less";
+  }
+
+  if (template.title.length > 160) {
+    return "Template title must be 160 characters or less";
+  }
+
+  return "";
+};
+
+const toTemplateWriteData = (template) => {
+  const data = {
+    name: template.name,
+    category: template.category,
+    description: template.description,
+    title: template.title,
+    subtitle: template.subtitle,
+    body: template.body,
+    footer: template.footer,
+    color: template.color,
+  };
+
+  if (template.uses !== undefined) {
+    data.uses = template.uses;
+  }
+
+  return data;
+};
+
 const getCertificateInputError = (certificate) => {
   if (
     !certificate.studentName ||
@@ -48,8 +116,44 @@ const getCertificateInputError = (certificate) => {
     return "Missing required certificate fields";
   }
 
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(certificate.studentEmail)) {
+    return "Invalid student email";
+  }
+
+  if (!isAddress(certificate.studentWalletAddress)) {
+    return "Invalid student wallet address";
+  }
+
   return "";
 };
+
+const createHelmetOptions = () => ({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      baseUri: ["'self'"],
+      connectSrc: [
+        "'self'",
+        "https:",
+        "wss:",
+        "http://localhost:4000",
+        "http://127.0.0.1:4000",
+        "http://localhost:8545",
+        "http://127.0.0.1:8545",
+      ],
+      fontSrc: ["'self'", "data:"],
+      formAction: ["'self'"],
+      frameSrc: ["'self'", "https://auth.privy.io", "https://*.privy.io"],
+      frameAncestors: ["'none'"],
+      imgSrc: ["'self'", "data:", "blob:", "https:"],
+      objectSrc: ["'none'"],
+      scriptSrc: ["'self'"],
+      scriptSrcAttr: ["'none'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+    },
+  },
+  crossOriginEmbedderPolicy: false,
+});
 
 const toIssuePayload = (certificateId, certificate) => ({
   certificateId,
@@ -65,12 +169,38 @@ const toIssuePayload = (certificateId, certificate) => ({
   notes: certificate.additionalNotes,
 });
 
+const toIsoString = (value) => {
+  if (!value) {
+    return null;
+  }
+
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+};
+
 const toPublicUser = (user) => ({
   id: user.id,
   username: user.username,
   email: user.email,
   role: user.role,
   name: user.name,
+  walletAddress: user.walletAddress || "",
+  walletVerifiedAt: toIsoString(user.walletVerifiedAt),
+});
+
+const toPublicTemplate = (template) => ({
+  id: template.id,
+  name: template.name,
+  category: template.category || "",
+  description: template.description || "",
+  title: template.title,
+  subtitle: template.subtitle || "",
+  body: template.body || "",
+  footer: template.footer || "",
+  color: template.color || "from-slate-700 to-slate-900",
+  uses: Number(template.uses || 0),
+  createdAt: template.createdAt instanceof Date ? template.createdAt.toISOString() : String(template.createdAt || ""),
+  updatedAt: template.updatedAt instanceof Date ? template.updatedAt.toISOString() : String(template.updatedAt || ""),
 });
 
 const createAuthCookieOptions = (isProduction, expiresInMs) => ({
@@ -108,7 +238,19 @@ const parseExpiresInMs = (expiresIn) => {
   return value * multiplier;
 };
 
+const getBearerToken = (req) => {
+  const authorizationHeader = String(req.get("authorization") || "");
+  const match = authorizationHeader.match(/^Bearer\s+(.+)$/i);
+  return match ? match[1].trim() : "";
+};
+
+const normalizeWalletAddress = (address) => {
+  const candidate = String(address || "").trim();
+  return isAddress(candidate) ? getAddress(candidate) : "";
+};
+
 const createApp = ({
+  CertificateTemplate,
   User,
   issueCertificate,
   frontendOrigin,
@@ -117,6 +259,7 @@ const createApp = ({
   allowedStudentDomain,
   isProduction,
   staticRoot,
+  verifyPrivyAccessToken,
 }) => {
   if (!jwtSecret) {
     throw new Error("Missing JWT_SECRET in backend environment");
@@ -124,11 +267,7 @@ const createApp = ({
 
   const authCookieMaxAge = parseExpiresInMs(jwtExpiresIn);
   const authCookieOptions = createAuthCookieOptions(isProduction, authCookieMaxAge);
-  const allowedOrigins = [
-    frontendOrigin,
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-  ];
+  const allowedOrigins = getAllowedOrigins(frontendOrigin);
 
   const corsOptions = {
     origin(origin, callback) {
@@ -150,8 +289,9 @@ const createApp = ({
 
   const app = express();
   app.disable("x-powered-by");
+  app.set("trust proxy", isProduction ? 1 : false);
 
-  app.use(helmet());
+  app.use(helmet(createHelmetOptions()));
   app.use(cors(corsOptions));
   app.options("*", cors(corsOptions));
   app.use(cookieParser());
@@ -196,7 +336,8 @@ const createApp = ({
 
   const requireRole = (role) => (req, res, next) => {
     if (req.auth?.role !== role) {
-      return res.status(403).json({ message: "Forbidden" });
+      const label = role === "admin" ? "Admin" : "Student";
+      return res.status(403).json({ message: `${label} account required` });
     }
 
     return next();
@@ -285,10 +426,22 @@ const createApp = ({
     return res.status(204).send();
   });
 
-  app.get("/api/auth/me", authenticate, async (req, res) => {
-    const userQuery = User.findOne({ id: req.auth.sub });
+  app.get("/api/auth/me", async (req, res) => {
+    const token = req.cookies?.[AUTH_COOKIE_NAME] || "";
+    if (!token) {
+      return res.json({ user: null });
+    }
+
+    let payload;
+    try {
+      payload = jwt.verify(token, jwtSecret);
+    } catch {
+      return res.status(401).json({ message: "Invalid or expired session" });
+    }
+
+    const userQuery = User.findOne({ id: payload.sub });
     if (typeof userQuery?.select === "function") {
-      userQuery.select("id username email role name");
+      userQuery.select("id username email role name walletAddress walletVerifiedAt");
     }
 
     const user = await executeMaybeLean(userQuery);
@@ -297,6 +450,176 @@ const createApp = ({
     }
 
     return res.json({ user: toPublicUser(user) });
+  });
+
+  app.post("/api/student/wallet/bind", authenticate, requireRole("student"), async (req, res) => {
+    const walletAddress = normalizeWalletAddress(req.body?.walletAddress);
+    if (!walletAddress) {
+      return res.status(400).json({ message: "Valid Ethereum wallet address is required" });
+    }
+
+    const privyAccessToken = getBearerToken(req);
+    if (!privyAccessToken) {
+      return res.status(401).json({ message: "Privy access token is required" });
+    }
+
+    if (typeof verifyPrivyAccessToken !== "function") {
+      return res.status(503).json({
+        message: "Privy server verification is not configured",
+      });
+    }
+
+    let verifiedPrivyUser;
+    try {
+      verifiedPrivyUser = await verifyPrivyAccessToken(privyAccessToken);
+    } catch {
+      return res.status(401).json({ message: "Privy session could not be verified" });
+    }
+
+    const walletAddressNormalized = walletAddress.toLowerCase();
+    const verifiedWalletAddresses = Array.isArray(verifiedPrivyUser?.walletAddresses)
+      ? verifiedPrivyUser.walletAddresses
+          .map(normalizeWalletAddress)
+          .filter(Boolean)
+          .map((address) => address.toLowerCase())
+      : [];
+
+    if (!verifiedWalletAddresses.includes(walletAddressNormalized)) {
+      return res.status(403).json({
+        message: "This wallet is not linked to the signed-in Privy user. Sign out of Privy, reconnect the correct wallet, then verify again.",
+      });
+    }
+
+    const existingWalletUser = await executeMaybeLean(
+      User.findOne({ walletAddressNormalized }),
+    );
+    if (existingWalletUser && existingWalletUser.id !== req.auth.sub) {
+      return res.status(409).json({ message: "Wallet is already linked to another student" });
+    }
+
+    try {
+      const updatedUserQuery = User.findOneAndUpdate(
+        { id: req.auth.sub, role: "student" },
+        {
+          walletAddress,
+          walletAddressNormalized,
+          privyUserId: verifiedPrivyUser.privyUserId || "",
+          walletVerifiedAt: new Date(),
+        },
+        { new: true, runValidators: true },
+      );
+
+      if (typeof updatedUserQuery?.select === "function") {
+        updatedUserQuery.select("id username email role name walletAddress walletVerifiedAt");
+      }
+
+      const updatedUser = await executeMaybeLean(updatedUserQuery);
+      if (!updatedUser) {
+        return res.status(404).json({ message: "Student account not found" });
+      }
+
+      return res.json({ user: toPublicUser(updatedUser) });
+    } catch (error) {
+      if (error?.code === 11000) {
+        return res.status(409).json({ message: "Wallet is already linked to another student" });
+      }
+
+      return res.status(500).json({ message: "Unable to save verified wallet" });
+    }
+  });
+
+  app.get("/api/templates", authenticate, requireRole("admin"), async (_req, res) => {
+    const query = CertificateTemplate.find({});
+    if (typeof query?.sort === "function") {
+      query.sort({ updatedAt: -1, createdAt: -1 });
+    }
+
+    const templates = await executeMaybeLean(query);
+    return res.json({ templates: (templates || []).map(toPublicTemplate) });
+  });
+
+  app.get("/api/templates/:id", authenticate, requireRole("admin"), async (req, res) => {
+    const template = await executeMaybeLean(CertificateTemplate.findOne({ id: req.params.id }));
+    if (!template) {
+      return res.status(404).json({ message: "Template not found" });
+    }
+
+    return res.json({ template: toPublicTemplate(template) });
+  });
+
+  app.post("/api/templates", authenticate, requireRole("admin"), async (req, res) => {
+    const input = normalizeTemplateInput(req.body);
+    const validationError = getTemplateInputError(input);
+    if (validationError) {
+      return res.status(400).json({ message: validationError });
+    }
+
+    const template = await CertificateTemplate.create({
+      id: createTemplateId(),
+      ...toTemplateWriteData(input),
+      uses: input.uses ?? 0,
+      createdBy: req.auth.sub,
+      updatedBy: req.auth.sub,
+    });
+
+    return res.status(201).json({ template: toPublicTemplate(template) });
+  });
+
+  app.put("/api/templates/:id", authenticate, requireRole("admin"), async (req, res) => {
+    const input = normalizeTemplateInput(req.body);
+    const validationError = getTemplateInputError(input);
+    if (validationError) {
+      return res.status(400).json({ message: validationError });
+    }
+
+    const updated = await executeMaybeLean(
+      CertificateTemplate.findOneAndUpdate(
+        { id: req.params.id },
+        {
+          ...toTemplateWriteData(input),
+          updatedBy: req.auth.sub,
+        },
+        { new: true },
+      ),
+    );
+    if (!updated) {
+      return res.status(404).json({ message: "Template not found" });
+    }
+
+    return res.json({ template: toPublicTemplate(updated) });
+  });
+
+  app.post("/api/templates/:id/duplicate", authenticate, requireRole("admin"), async (req, res) => {
+    const existing = await executeMaybeLean(CertificateTemplate.findOne({ id: req.params.id }));
+    if (!existing) {
+      return res.status(404).json({ message: "Template not found" });
+    }
+
+    const duplicate = await CertificateTemplate.create({
+      name: `${existing.name} Copy`,
+      category: existing.category || "",
+      description: existing.description || "",
+      title: existing.title,
+      subtitle: existing.subtitle || "",
+      body: existing.body || "",
+      footer: existing.footer || "",
+      color: existing.color || "from-slate-700 to-slate-900",
+      uses: 0,
+      id: createTemplateId(),
+      createdBy: req.auth.sub,
+      updatedBy: req.auth.sub,
+    });
+
+    return res.status(201).json({ template: toPublicTemplate(duplicate) });
+  });
+
+  app.delete("/api/templates/:id", authenticate, requireRole("admin"), async (req, res) => {
+    const result = await CertificateTemplate.deleteOne({ id: req.params.id });
+    if (!result?.deletedCount) {
+      return res.status(404).json({ message: "Template not found" });
+    }
+
+    return res.status(204).send();
   });
 
   app.post("/api/certificates/issue", authenticate, requireRole("admin"), async (req, res) => {
@@ -411,5 +734,6 @@ const createApp = ({
 module.exports = {
   AUTH_COOKIE_NAME,
   createApp,
+  toPublicTemplate,
   toPublicUser,
 };

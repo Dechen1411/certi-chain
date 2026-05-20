@@ -2,12 +2,14 @@ services:
   - type: web
     name: certificate-system
     runtime: node
-    buildCommand: npm ci --prefix backend && npm ci --prefix frontend && npm run build --prefix frontend
+    buildCommand: npm ci --include=dev --prefix backend && npm ci --include=dev --prefix frontend && npm run build --prefix frontend && npm prune --omit=dev --prefix backend
     startCommand: npm start --prefix backend
     healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
         value: production
+      - key: NODE_VERSION
+        value: "20"
       - key: VITE_API_BASE_URL
         value: /api
       - key: JWT_SECRET
@@ -33,4 +35,18 @@ services:
       - key: VITE_CHAIN_RPC_URL
         sync: false
       - key: VITE_CERTIFICATE_REGISTRY_ADDRESS
+        sync: false
+      - key: VITE_CHAIN_ID
+        value: "11155111"
+      - key: VITE_CERTIFICATE_REGISTRY_DEPLOYMENT_BLOCK
+        sync: false
+      - key: VITE_EVENT_LOOKBACK_BLOCKS
+        value: "10"
+      - key: VITE_EVENT_QUERY_CHUNK_BLOCKS
+        value: "10"
+      - key: VITE_PRIVY_APP_ID
+        sync: false
+      - key: PRIVY_APP_ID
+        sync: false
+      - key: PRIVY_APP_SECRET
         sync: false

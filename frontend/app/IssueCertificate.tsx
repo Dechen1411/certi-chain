@@ -6,6 +6,7 @@ import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
 import { Label } from "./ui/label";
 import { toast } from "sonner";
+import { API_BASE_URL, parseApiError } from "../lib/api";
 import {
   getReadableError,
 } from "../lib/certificateRegistry";
@@ -15,8 +16,6 @@ import {
   subtlePanelClass,
 } from "./ui/app-primitives";
 import { cn } from "./ui/utils";
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.trim() || "http://localhost:4000/api";
 
 export function IssueCertificate() {
   const [formData, setFormData] = useState({
@@ -71,16 +70,13 @@ export function IssueCertificate() {
       });
 
       if (!response.ok) {
-        const payload = await response.json().catch(() => ({ message: "Failed to issue certificate" })) as {
-          message?: string;
-        };
-        throw new Error(payload.message || "Failed to issue certificate");
+        throw new Error(await parseApiError(response));
       }
 
       const payload = await response.json() as { certificateId: string; txHash: string };
 
       setLastIssuedId(payload.certificateId);
-      toast.success(`Certificate ${payload.certificateId} issued on-chain for ${formData.studentName}`);
+      toast.success(`Certificate ${payload.certificateId} issued for ${formData.studentName}`);
 
       // Reset form
       setFormData({
@@ -240,9 +236,14 @@ export function IssueCertificate() {
               className={`flex-1 gap-2 ${primaryActionClass}`}
             >
               <Award className="w-4 h-4" />
-              {isSubmitting ? "Issuing On-Chain..." : "Issue Certificate"}
+              {isSubmitting ? "Issuing Certificate..." : "Issue Certificate"}
             </Button>
-            <Button variant="outline" className="gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="gap-2"
+              onClick={() => toast.info("The preview updates as you complete the form.")}
+            >
               <Eye className="w-4 h-4" />
               Preview
             </Button>

@@ -1,12 +1,15 @@
-import { createContext, useContext, useState, ReactNode } from "react";
+import { createContext, useCallback, useContext, useState, ReactNode } from "react";
 import { useEffect } from "react";
+import { API_BASE_URL, parseApiError } from "../lib/api";
 
-interface User {
+export interface User {
   id: string;
   username: string;
   email: string;
   role: "admin" | "student";
   name?: string;
+  walletAddress?: string;
+  walletVerifiedAt?: string | null;
 }
 
 interface AuthContextType {
@@ -20,54 +23,48 @@ interface AuthContextType {
     username?: string;
   }) => Promise<boolean>;
   logout: () => Promise<void>;
+  refreshUser: () => Promise<User | null>;
   isAuthenticated: boolean;
   isLoadingAuth: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.trim() || "http://localhost:4000/api";
 
 interface AuthResponse {
   user: User;
 }
 
-const parseApiError = async (response: Response): Promise<string> => {
-  try {
-    const payload = await response.json() as { message?: string };
-    return payload.message || "Request failed";
-  } catch {
-    return "Request failed";
-  }
-};
+interface SessionResponse {
+  user: User | null;
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
 
-  useEffect(() => {
-    const restoreSession = async () => {
-      try {
-        const response = await fetch(`${API_BASE_URL}/auth/me`, {
-          credentials: "include",
-        });
+  const refreshUser = useCallback(async (): Promise<User | null> => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/me`, {
+        credentials: "include",
+      });
 
-        if (!response.ok) {
-          setUser(null);
-          setIsLoadingAuth(false);
-          return;
-        }
-
-        const payload = await response.json() as { user: User };
-        setUser(payload.user);
-      } catch {
+      if (!response.ok) {
         setUser(null);
-      } finally {
-        setIsLoadingAuth(false);
+        return null;
       }
-    };
 
-    void restoreSession();
+      const payload = await response.json() as SessionResponse;
+      setUser(payload.user);
+      return payload.user;
+    } catch {
+      setUser(null);
+      return null;
+    }
   }, []);
+
+  useEffect(() => {
+    void refreshUser().finally(() => setIsLoadingAuth(false));
+  }, [refreshUser]);
 
   const login = async (identifier: string, password: string, role?: "admin" | "student"): Promise<User | null> => {
     const response = await fetch(`${API_BASE_URL}/auth/login`, {
@@ -87,6 +84,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const loggedInUser = payload.user;
 
     if (role && loggedInUser.role !== role) {
+      await fetch(`${API_BASE_URL}/auth/logout`, {
+        method: "POST",
+        credentials: "include",
+      });
+      setUser(null);
       return null;
     }
 
@@ -123,8 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     if (!response.ok) {
-      await parseApiError(response);
-      return false;
+      throw new Error(await parseApiError(response));
     }
 
     const payload = await response.json() as AuthResponse;
@@ -150,6 +151,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         login,
         signup,
         logout,
+        refreshUser,
         isAuthenticated: !!user,
         isLoadingAuth,
       }}

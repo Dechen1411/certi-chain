@@ -47,8 +47,8 @@ export function Login() {
     let user = null;
     try {
       user = await login(loginData.identifier, loginData.password);
-    } catch {
-      setError("Unable to sign in right now. Please try again.");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Unable to sign in right now. Please try again.");
       setIsLoading(false);
       return;
     }
@@ -92,8 +92,8 @@ export function Login() {
         name: registerData.name,
         role: "student",
       });
-    } catch {
-      setError("Unable to create account right now. Please try again.");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Unable to create account right now. Please try again.");
       setIsLoading(false);
       return;
     }
@@ -108,7 +108,7 @@ export function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
+    <div className="mx-auto flex w-full max-w-md flex-col justify-center py-8 sm:py-12">
       <div className="w-full max-w-md space-y-6">
         <Link to="/" className="flex items-center justify-center gap-3">
           <IconBadge icon={Award} tone="slate" className="h-12 w-12" />
@@ -261,7 +261,7 @@ export function Login() {
 
         <div className="text-center">
           <Link to="/" className="text-sm text-gray-600 hover:text-gray-900">
-            ← Back to Home
+            &larr; Back to Home
           </Link>
         </div>
       </div>

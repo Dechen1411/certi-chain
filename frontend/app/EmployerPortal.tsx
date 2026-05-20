@@ -121,7 +121,7 @@ export function EmployerPortal() {
       if (!exists) {
         setVerificationResult({
           valid: false,
-          message: "Certificate not found on-chain. Please check the Certificate ID and try again.",
+          message: "Certificate not found. Please check the Certificate ID and try again.",
         });
 
         setRecentVerifications((prev) => [
@@ -281,7 +281,7 @@ export function EmployerPortal() {
                 <label className="block text-sm text-gray-700 mb-2">
                   Enter Certificate ID
                 </label>
-                <div className="flex gap-3">
+                <div className="flex flex-col gap-3 sm:flex-row">
                   <Input
                     type="text"
                     placeholder="e.g., CERT-2024-001"
@@ -297,7 +297,7 @@ export function EmployerPortal() {
                   <Button
                     onClick={handleVerify}
                     disabled={isVerifying || !certificateId.trim()}
-                    className={`gap-2 ${primaryActionClass}`}
+                    className={`w-full gap-2 sm:w-auto ${primaryActionClass}`}
                   >
                     <Search className="w-4 h-4" />
                     {isVerifying ? "Verifying..." : "Verify"}
@@ -391,7 +391,7 @@ export function EmployerPortal() {
                         </p>
                       </div>
                       <div>
-                        <label className="text-sm text-gray-600">NFT Hash</label>
+                        <label className="text-sm text-gray-600">Verification Hash</label>
                         <p className="text-gray-900 mt-1 font-mono text-sm break-all">{verificationResult.nftHash}</p>
                       </div>
                       <div className="md:col-span-2">
@@ -401,13 +401,13 @@ export function EmployerPortal() {
                     </div>
                   </div>
 
-                  {/* Blockchain Badge */}
+                  {/* Verification Badge */}
                   <div className="bg-blue-50 border border-blue-100 p-4 rounded-lg">
                     <div className="flex items-center gap-3">
                       <Award className="w-6 h-6 text-blue-700" />
                       <div>
-                        <p className="text-sm text-gray-900">Blockchain Verified</p>
-                        <p className="text-xs text-gray-600">This certificate is secured on the blockchain</p>
+                        <p className="text-sm text-gray-900">Verified Record</p>
+                        <p className="text-xs text-gray-600">This certificate matches the secure verification record</p>
                       </div>
                     </div>
                   </div>
@@ -417,7 +417,7 @@ export function EmployerPortal() {
                   <EmptyState
                     icon={XCircle}
                     title="Certificate Not Found"
-                    description={verificationResult.message || "No matching certificate was found on-chain."}
+                    description={verificationResult.message || "No matching certificate was found."}
                   />
                 </div>
               )}
@@ -443,7 +443,7 @@ export function EmployerPortal() {
               ) : recentVerifications.map((verification) => (
                 <div key={verification.id} className="p-6 hover:bg-gray-50 transition-colors">
                   <div className="flex items-start justify-between gap-4">
-                    <div className="flex items-start gap-4">
+                    <div className="flex min-w-0 items-start gap-4">
                       <div
                         className={`w-10 h-10 rounded-full flex items-center justify-center ${
                           verification.status === "Valid"
@@ -457,9 +457,9 @@ export function EmployerPortal() {
                           <XCircle className="w-6 h-6 text-red-600" />
                         )}
                       </div>
-                      <div>
+                      <div className="min-w-0">
                         <div className="flex items-center gap-2 mb-1">
-                          <p className="text-gray-900">{verification.certificateId}</p>
+                          <p className="break-all text-gray-900">{verification.certificateId}</p>
                           <span
                             className={`px-2 py-1 text-xs rounded-full ${
                               verification.status === "Valid"
