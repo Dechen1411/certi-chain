@@ -1,43 +1,44 @@
-import { lazy } from "react";
 import { createBrowserRouter, Navigate } from "react-router";
 import { PublicLayout } from "./app/PublicLayout";
 import { StudentLayout } from "./app/StudentLayout";
 import { AdminLayout } from "./app/AdminLayout";
+import { RouteErrorBoundary } from "./app/AppErrorBoundary";
+import { lazyWithReload } from "./lib/lazyWithReload";
 
-const PublicDashboard = lazy(() =>
+const PublicDashboard = lazyWithReload("public-dashboard", () =>
   import("./app/PublicDashboard").then((module) => ({ default: module.PublicDashboard })),
 );
-const Login = lazy(() =>
+const Login = lazyWithReload("login", () =>
   import("./app/Login").then((module) => ({ default: module.Login })),
 );
-const EmployerPortal = lazy(() =>
+const EmployerPortal = lazyWithReload("employer-portal", () =>
   import("./app/EmployerPortal").then((module) => ({ default: module.EmployerPortal })),
 );
-const StudentDashboard = lazy(() =>
+const StudentDashboard = lazyWithReload("student-dashboard", () =>
   import("./app/StudentDashboard").then((module) => ({ default: module.StudentDashboard })),
 );
-const StudentCertificates = lazy(() =>
+const StudentCertificates = lazyWithReload("student-certificates", () =>
   import("./app/StudentCertificates").then((module) => ({ default: module.StudentCertificates })),
 );
-const AdminDashboard = lazy(() =>
+const AdminDashboard = lazyWithReload("admin-dashboard", () =>
   import("./app/AdminDashboard").then((module) => ({ default: module.AdminDashboard })),
 );
-const CreateCertificate = lazy(() =>
+const CreateCertificate = lazyWithReload("create-certificate", () =>
   import("./app/CreateCertificate").then((module) => ({ default: module.CreateCertificate })),
 );
-const CertificateTemplates = lazy(() =>
+const CertificateTemplates = lazyWithReload("certificate-templates", () =>
   import("./app/CertificateTemplates").then((module) => ({ default: module.CertificateTemplates })),
 );
-const IssueCertificate = lazy(() =>
+const IssueCertificate = lazyWithReload("issue-certificate", () =>
   import("./app/IssueCertificate").then((module) => ({ default: module.IssueCertificate })),
 );
-const BulkIssueCertificate = lazy(() =>
+const BulkIssueCertificate = lazyWithReload("bulk-issue-certificate", () =>
   import("./app/BulkIssueCertificate").then((module) => ({ default: module.BulkIssueCertificate })),
 );
-const Certificates = lazy(() =>
+const Certificates = lazyWithReload("certificates", () =>
   import("./app/Certificate").then((module) => ({ default: module.Certificates })),
 );
-const Awards = lazy(() =>
+const Awards = lazyWithReload("awards", () =>
   import("./app/Awards").then((module) => ({ default: module.Awards })),
 );
 
@@ -45,6 +46,7 @@ export const router = createBrowserRouter([
   {
     path: "/",
     element: <PublicLayout />,
+    errorElement: <RouteErrorBoundary />,
     children: [
       { index: true, element: <PublicDashboard /> },
       { path: "employer", element: <EmployerPortal /> },
@@ -58,6 +60,7 @@ export const router = createBrowserRouter([
   {
     path: "/student",
     element: <StudentLayout />,
+    errorElement: <RouteErrorBoundary />,
     children: [
       { path: "dashboard", element: <StudentDashboard /> },
       { path: "certificates", element: <StudentCertificates /> },
@@ -67,6 +70,7 @@ export const router = createBrowserRouter([
   {
     path: "/admin",
     element: <AdminLayout />,
+    errorElement: <RouteErrorBoundary />,
     children: [
       { path: "dashboard", element: <AdminDashboard /> },
       { path: "dashboard/create-certificate", element: <CreateCertificate /> },

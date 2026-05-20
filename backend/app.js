@@ -722,10 +722,26 @@ const createApp = ({
   });
 
   if (staticRoot) {
-    app.use(express.static(staticRoot));
-    app.get(/^\/(?!api\/).*/, (_req, res) => {
+    const sendSpaIndex = (_req, res) => {
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
       res.sendFile(path.join(staticRoot, "index.html"));
-    });
+    };
+
+    app.use(express.static(staticRoot, {
+      index: false,
+      setHeaders: (res, filePath) => {
+        if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+          return;
+        }
+
+        res.setHeader("Cache-Control", "public, max-age=0, must-revalidate");
+      },
+    }));
+
+    app.get(/^\/(?!api\/).*/, sendSpaIndex);
   }
 
   return app;

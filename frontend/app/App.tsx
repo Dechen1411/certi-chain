@@ -6,8 +6,10 @@ import { Toaster } from "./ui/sonner";
 import { Award } from "lucide-react";
 import { IconBadge } from "./ui/app-primitives";
 import { isPrivyConfigured } from "../lib/privy";
+import { AppErrorBoundary } from "./AppErrorBoundary";
+import { lazyWithReload } from "../lib/lazyWithReload";
 
-const PrivyAppProvider = lazy(() =>
+const PrivyAppProvider = lazyWithReload("privy-provider", () =>
   import("./PrivyAppProvider").then((module) => ({ default: module.PrivyAppProvider })),
 );
 
@@ -39,12 +41,14 @@ export default function App() {
   const app = <AppShell />;
 
   if (!isPrivyConfigured) {
-    return app;
+    return <AppErrorBoundary>{app}</AppErrorBoundary>;
   }
 
   return (
-    <Suspense fallback={<LoadingFallback />}>
-      <PrivyAppProvider>{app}</PrivyAppProvider>
-    </Suspense>
+    <AppErrorBoundary>
+      <Suspense fallback={<LoadingFallback />}>
+        <PrivyAppProvider>{app}</PrivyAppProvider>
+      </Suspense>
+    </AppErrorBoundary>
   );
 }
