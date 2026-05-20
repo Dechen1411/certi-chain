@@ -8,6 +8,7 @@ import { Label } from "./ui/label";
 import { toast } from "sonner";
 import { API_BASE_URL, parseApiError } from "../lib/api";
 import { getReadableError } from "../lib/certificateRegistry";
+import { DEPARTMENT_OPTIONS } from "../lib/departments";
 import {
   EmptyState,
   PageHeader,
@@ -344,12 +345,23 @@ export function BulkIssueCertificate() {
 
                 <div>
                   <Label htmlFor="department">Department</Label>
-                  <Input
+                  <select
                     id="department"
                     value={department}
                     onChange={(event) => setDepartment(event.target.value)}
-                    placeholder="Computer Science"
-                  />
+                    className={cn(
+                      "border-input flex h-9 w-full min-w-0 rounded-md border bg-input-background px-3 py-1 text-base transition-[color,box-shadow] outline-none md:text-sm",
+                      "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]",
+                      !department && "text-muted-foreground",
+                    )}
+                  >
+                    <option value="">Select department</option>
+                    {DEPARTMENT_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 

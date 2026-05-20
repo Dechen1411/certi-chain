@@ -10,6 +10,7 @@ import { API_BASE_URL, parseApiError } from "../lib/api";
 import {
   getReadableError,
 } from "../lib/certificateRegistry";
+import { DEPARTMENT_OPTIONS } from "../lib/departments";
 import {
   PageHeader,
   primaryActionClass,
@@ -159,12 +160,23 @@ export function IssueCertificate() {
 
               <div>
                 <Label htmlFor="department">Department</Label>
-                <Input
+                <select
                   id="department"
                   value={formData.department}
                   onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                  placeholder="Computer Science"
-                />
+                  className={cn(
+                    "border-input flex h-9 w-full min-w-0 rounded-md border bg-input-background px-3 py-1 text-base transition-[color,box-shadow] outline-none md:text-sm",
+                    "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]",
+                    !formData.department && "text-muted-foreground",
+                  )}
+                >
+                  <option value="">Select department</option>
+                  {DEPARTMENT_OPTIONS.map((department) => (
+                    <option key={department} value={department}>
+                      {department}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
           </Card>
