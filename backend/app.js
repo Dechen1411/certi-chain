@@ -3,7 +3,7 @@ const cookieParser = require("cookie-parser");
 const cors = require("cors");
 const { randomInt, randomUUID } = require("crypto");
 const express = require("express");
-const { getAddress, isAddress } = require("ethers");
+const { getAddress, isAddress, keccak256, toUtf8Bytes } = require("ethers");
 const helmet = require("helmet");
 const jwt = require("jsonwebtoken");
 const path = require("path");
@@ -25,6 +25,10 @@ const executeMaybeLean = async (queryResult) => {
 
 const createCertificateId = () => {
   return `CERT-${new Date().getFullYear()}-${randomInt(0, 1_000_000_000).toString().padStart(9, "0")}`;
+};
+
+const createCertificateHash = (certificateId) => {
+  return keccak256(toUtf8Bytes(String(certificateId || "").trim().toUpperCase()));
 };
 
 const createTemplateId = () => {
@@ -204,6 +208,46 @@ const toPublicTemplate = (template) => ({
   updatedAt: template.updatedAt instanceof Date ? template.updatedAt.toISOString() : String(template.updatedAt || ""),
 });
 
+const getUnixTimestamp = (value) => {
+  const date = value instanceof Date ? value : new Date(value || Date.now());
+  return Number.isNaN(date.getTime()) ? Math.floor(Date.now() / 1000) : Math.floor(date.getTime() / 1000);
+};
+
+const toPublicCertificate = (certificate) => {
+  const issuedAt = certificate.issuedAt || certificate.createdAt || new Date();
+  const tokenId = certificate.tokenId || certificate.certificateId;
+
+  return {
+    tokenId,
+    certificateId: certificate.certificateId,
+    certificateType: certificate.certificateType,
+    issueDate: certificate.issueDate,
+    issuedAt: getUnixTimestamp(issuedAt),
+    studentName: certificate.studentName,
+    studentEmail: certificate.studentEmail || "",
+    studentId: certificate.studentId || "",
+    studentWalletAddress: certificate.studentWalletAddress,
+    completionDate: certificate.completionDate || "",
+    grade: certificate.grade || "",
+    department: certificate.department || "",
+    description: certificate.description || "",
+    nftHash: certificate.certificateHash || "",
+    revoked: Boolean(certificate.revoked),
+    tokenUri: certificate.tokenUri || "",
+    txHash: certificate.txHash || "",
+  };
+};
+
+const sortPublicCertificates = (certificates) => {
+  return [...certificates].sort((a, b) => {
+    const byIssuedAt = Number(b.issuedAt || 0) - Number(a.issuedAt || 0);
+    if (byIssuedAt !== 0) {
+      return byIssuedAt;
+    }
+    return String(b.certificateId).localeCompare(String(a.certificateId));
+  });
+};
+
 const createAuthCookieOptions = (isProduction, expiresInMs) => ({
   httpOnly: true,
   secure: isProduction,
@@ -251,6 +295,7 @@ const normalizeWalletAddress = (address) => {
 };
 
 const createApp = ({
+  Certificate,
   CertificateTemplate,
   User,
   issueCertificate,
@@ -623,6 +668,76 @@ const createApp = ({
     return res.status(204).send();
   });
 
+  const findCertificateRecords = async (query) => {
+    const certificateQuery = Certificate.find(query);
+    if (typeof certificateQuery?.sort === "function") {
+      certificateQuery.sort({ issuedAt: -1, createdAt: -1 });
+    }
+
+    const certificates = await executeMaybeLean(certificateQuery);
+    return sortPublicCertificates((certificates || []).map(toPublicCertificate));
+  };
+
+  app.get("/api/certificates", authenticate, requireRole("admin"), async (_req, res) => {
+    const certificates = await findCertificateRecords({});
+    return res.json({ certificates });
+  });
+
+  app.get("/api/certificates/stats", authenticate, requireRole("admin"), async (_req, res) => {
+    const certificates = await findCertificateRecords({});
+    const currentMonth = new Date().toISOString().slice(0, 7);
+    const revokedCertificates = certificates.filter((certificate) => certificate.revoked).length;
+    const issuedThisMonth = certificates.filter((certificate) => {
+      return String(certificate.issueDate || "").slice(0, 7) === currentMonth;
+    }).length;
+
+    return res.json({
+      totalCertificates: certificates.length,
+      activeCertificates: certificates.length - revokedCertificates,
+      revokedCertificates,
+      issuedThisMonth,
+      recentCertificates: certificates.slice(0, 5),
+    });
+  });
+
+  app.get("/api/student/certificates", authenticate, requireRole("student"), async (req, res) => {
+    const user = await executeMaybeLean(User.findOne({ id: req.auth.sub }));
+    const walletAddressNormalized = String(user?.walletAddressNormalized || user?.walletAddress || "").toLowerCase();
+
+    if (!walletAddressNormalized) {
+      return res.json({ certificates: [] });
+    }
+
+    const certificates = await findCertificateRecords({ studentWalletAddressNormalized: walletAddressNormalized });
+    return res.json({ certificates });
+  });
+
+  const saveIssuedCertificate = async ({ certificateId, certificate, issued, issuedBy }) => {
+    const walletAddress = normalizeWalletAddress(certificate.studentWalletAddress);
+    const certificateHash = issued.certificateHash || createCertificateHash(certificateId);
+
+    return Certificate.create({
+      certificateId,
+      tokenId: issued.tokenId ? String(issued.tokenId) : "",
+      txHash: issued.txHash,
+      certificateHash,
+      tokenUri: issued.tokenUri || issued.certificateURI || "",
+      studentName: certificate.studentName,
+      studentEmail: certificate.studentEmail,
+      studentId: certificate.studentId,
+      studentWalletAddress: walletAddress,
+      studentWalletAddressNormalized: walletAddress.toLowerCase(),
+      certificateType: certificate.certificateType,
+      department: certificate.department,
+      grade: certificate.grade,
+      issueDate: certificate.issueDate,
+      completionDate: certificate.completionDate,
+      description: certificate.additionalNotes,
+      issuedAt: new Date(),
+      issuedBy,
+    });
+  };
+
   app.post("/api/certificates/issue", authenticate, requireRole("admin"), async (req, res) => {
     const certificate = normalizeCertificateInput(req.body);
     const validationError = getCertificateInputError(certificate);
@@ -635,10 +750,17 @@ const createApp = ({
 
     try {
       const issued = await issueCertificate(toIssuePayload(certificateId, certificate));
+      const savedCertificate = await saveIssuedCertificate({
+        certificateId,
+        certificate,
+        issued,
+        issuedBy: req.auth.sub,
+      });
 
       return res.status(201).json({
         certificateId,
         txHash: issued.txHash,
+        certificate: toPublicCertificate(savedCertificate),
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to issue certificate";
@@ -697,11 +819,18 @@ const createApp = ({
 
       try {
         const result = await issueCertificate(toIssuePayload(certificateId, certificate));
+        const savedCertificate = await saveIssuedCertificate({
+          certificateId,
+          certificate,
+          issued: result,
+          issuedBy: req.auth.sub,
+        });
         issued.push({
           certificateId,
           txHash: result.txHash,
           studentName: certificate.studentName,
           studentEmail: certificate.studentEmail,
+          certificate: toPublicCertificate(savedCertificate),
         });
       } catch (error) {
         failed.push({

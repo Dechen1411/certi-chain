@@ -55,8 +55,42 @@ const certificateTemplateSchema = new mongoose.Schema(
 const CertificateTemplate = mongoose.models.CertificateTemplate ||
   mongoose.model("CertificateTemplate", certificateTemplateSchema);
 
+const certificateSchema = new mongoose.Schema(
+  {
+    certificateId: { type: String, required: true, unique: true, index: true },
+    tokenId: { type: String, default: "", index: true },
+    txHash: { type: String, required: true, index: true },
+    certificateHash: { type: String, default: "", index: true },
+    tokenUri: { type: String, default: "" },
+    studentName: { type: String, required: true, trim: true },
+    studentEmail: { type: String, required: true, trim: true, lowercase: true, index: true },
+    studentId: { type: String, default: "", trim: true },
+    studentWalletAddress: { type: String, required: true, trim: true },
+    studentWalletAddressNormalized: { type: String, required: true, index: true },
+    certificateType: { type: String, required: true, trim: true },
+    department: { type: String, default: "", trim: true },
+    grade: { type: String, default: "", trim: true },
+    issueDate: { type: String, required: true, trim: true },
+    completionDate: { type: String, default: "", trim: true },
+    description: { type: String, default: "", trim: true },
+    revoked: { type: Boolean, default: false, index: true },
+    issuedAt: { type: Date, default: Date.now, index: true },
+    issuedBy: { type: String, default: "", index: true },
+  },
+  {
+    timestamps: true,
+    versionKey: false,
+  },
+);
+
+certificateSchema.index({ studentWalletAddressNormalized: 1, issuedAt: -1 });
+certificateSchema.index({ issuedAt: -1, createdAt: -1 });
+
+const Certificate = mongoose.models.Certificate ||
+  mongoose.model("Certificate", certificateSchema);
+
 const connectDb = async (mongoUri) => {
   await mongoose.connect(mongoUri);
 };
 
-module.exports = { CertificateTemplate, User, connectDb };
+module.exports = { Certificate, CertificateTemplate, User, connectDb };

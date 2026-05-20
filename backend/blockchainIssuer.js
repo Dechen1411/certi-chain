@@ -9,6 +9,7 @@ const {
 
 const registryAbi = [
   "function issueCertificate(address student, bytes32 certificateHash, string certificateURI) external returns (uint256)",
+  "event CertificateIssued(uint256 indexed tokenId, address indexed student, bytes32 indexed certificateHash, string tokenURI)",
 ];
 
 const createCertificateHash = (certificateId) => {
@@ -46,10 +47,26 @@ const issueCertificateOnChain = async (certificate, config) => {
     certificateURI,
   );
 
-  await tx.wait();
+  const receipt = await tx.wait();
+  let tokenId = "";
+
+  for (const log of receipt.logs || []) {
+    try {
+      const parsed = contract.interface.parseLog(log);
+      if (parsed?.name === "CertificateIssued") {
+        tokenId = parsed.args.tokenId.toString();
+        break;
+      }
+    } catch {
+      // Ignore logs from other contracts in the same transaction receipt.
+    }
+  }
 
   return {
     txHash: tx.hash,
+    tokenId,
+    certificateHash,
+    tokenUri: certificateURI,
   };
 };
 

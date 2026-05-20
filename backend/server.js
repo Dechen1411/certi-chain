@@ -5,7 +5,7 @@ const fs = require("fs");
 const path = require("path");
 const { createApp } = require("./app");
 const { issueCertificateOnChain } = require("./blockchainIssuer");
-const { CertificateTemplate, User, connectDb } = require("./db");
+const { Certificate, CertificateTemplate, User, connectDb } = require("./db");
 const { createPrivyAccessTokenVerifier } = require("./privy");
 
 const PORT = Number(process.env.PORT || 4000);
@@ -62,6 +62,7 @@ const seedAdminUserIfConfigured = async () => {
 };
 
 const app = createApp({
+  Certificate,
   CertificateTemplate,
   User,
   issueCertificate: (certificate) => issueCertificateOnChain(certificate, {

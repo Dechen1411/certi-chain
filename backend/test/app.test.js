@@ -153,12 +153,58 @@ const createFakeTemplateModel = (initialTemplates = []) => {
   };
 };
 
+const cloneCertificate = (certificate) => ({ ...certificate });
+
+const createFakeCertificateModel = (initialCertificates = []) => {
+  const certificates = initialCertificates.map(cloneCertificate);
+
+  const matchesQuery = (certificate, query) => {
+    return Object.entries(query).every(([key, value]) => certificate[key] === value);
+  };
+
+  const createQuery = (value) => ({
+    sort(sortConfig) {
+      if (Array.isArray(value) && sortConfig?.issuedAt === -1) {
+        value.sort((a, b) => {
+          const aTime = new Date(a.issuedAt || a.createdAt || 0).getTime();
+          const bTime = new Date(b.issuedAt || b.createdAt || 0).getTime();
+          return bTime - aTime;
+        });
+      }
+      return this;
+    },
+    lean: async () => Array.isArray(value) ? value.map(cloneCertificate) : value && cloneCertificate(value),
+  });
+
+  const create = async (data) => {
+    const now = new Date();
+    const certificate = {
+      ...data,
+      issuedAt: data.issuedAt || now,
+      createdAt: data.createdAt || now,
+      updatedAt: data.updatedAt || now,
+    };
+    certificates.push(certificate);
+    return certificate;
+  };
+
+  const find = (query = {}) => createQuery(certificates.filter((certificate) => matchesQuery(certificate, query)));
+
+  return {
+    create,
+    find,
+    _certificates: certificates,
+  };
+};
+
 const createTestApp = (overrides = {}) => {
   const userModel = overrides.userModel || createFakeUserModel();
   const templateModel = overrides.templateModel || createFakeTemplateModel();
+  const certificateModel = overrides.certificateModel || createFakeCertificateModel();
   const issueCertificate = overrides.issueCertificate || (async () => ({ txHash: "0xtesthash" }));
 
   const app = createApp({
+    Certificate: certificateModel,
     CertificateTemplate: templateModel,
     User: userModel,
     issueCertificate,
@@ -170,7 +216,7 @@ const createTestApp = (overrides = {}) => {
     verifyPrivyAccessToken: overrides.verifyPrivyAccessToken,
   });
 
-  return { app, templateModel, userModel };
+  return { app, certificateModel, templateModel, userModel };
 };
 
 const createAdminModel = async () => {
@@ -402,7 +448,7 @@ test("admin session can issue certificates", async () => {
     return { txHash: "0xissued" };
   };
 
-  const { app } = createTestApp({ userModel, issueCertificate });
+  const { app, certificateModel } = createTestApp({ userModel, issueCertificate });
   const agent = request.agent(app);
 
   const loginResponse = await agent.post("/api/auth/login").send({
@@ -425,8 +471,94 @@ test("admin session can issue certificates", async () => {
   assert.equal(issueResponse.status, 201);
   assert.ok(issueResponse.body.certificateId.startsWith("CERT-"));
   assert.equal(issueResponse.body.txHash, "0xissued");
+  assert.equal(issueResponse.body.certificate.studentName, "Recipient");
+  assert.equal(issueResponse.body.certificate.studentWalletAddress, "0x8ba1f109551bD432803012645Ac136ddd64DBA72");
   assert.equal(issuedPayload.studentName, "Recipient");
   assert.equal(issuedPayload.certificateType, "Bachelor of Science");
+  assert.equal(certificateModel._certificates.length, 1);
+  assert.equal(certificateModel._certificates[0].certificateId, issueResponse.body.certificateId);
+  assert.equal(certificateModel._certificates[0].studentWalletAddressNormalized, "0x8ba1f109551bd432803012645ac136ddd64dba72");
+});
+
+test("admin can list issued certificates from MongoDB", async () => {
+  const userModel = await createAdminModel();
+  const certificateModel = createFakeCertificateModel([
+    {
+      certificateId: "CERT-2026-000000001",
+      txHash: "0xissued",
+      certificateHash: "0xhash",
+      tokenId: "1",
+      studentName: "Recipient",
+      studentEmail: "recipient@rub.edu.bt",
+      studentWalletAddress: "0x8ba1f109551bD432803012645Ac136ddd64DBA72",
+      studentWalletAddressNormalized: "0x8ba1f109551bd432803012645ac136ddd64dba72",
+      certificateType: "Bachelor of Science",
+      issueDate: "2026-04-21",
+      issuedAt: new Date("2026-04-21T10:00:00Z"),
+      revoked: false,
+    },
+  ]);
+
+  const { app } = createTestApp({ userModel, certificateModel });
+  const agent = request.agent(app);
+
+  await loginAdmin(agent);
+
+  const listResponse = await agent.get("/api/certificates");
+  assert.equal(listResponse.status, 200);
+  assert.equal(listResponse.body.certificates.length, 1);
+  assert.equal(listResponse.body.certificates[0].certificateId, "CERT-2026-000000001");
+
+  const statsResponse = await agent.get("/api/certificates/stats");
+  assert.equal(statsResponse.status, 200);
+  assert.equal(statsResponse.body.totalCertificates, 1);
+  assert.equal(statsResponse.body.activeCertificates, 1);
+});
+
+test("student can list certificates for their verified wallet", async () => {
+  const studentHash = await bcrypt.hash("StudentPass123!", 12);
+  const walletAddress = "0x8ba1f109551bD432803012645Ac136ddd64DBA72";
+  const userModel = createFakeUserModel([
+    {
+      id: "student-1",
+      username: "student",
+      email: "student@rub.edu.bt",
+      passwordHash: studentHash,
+      role: "student",
+      name: "Student",
+      walletAddress,
+      walletAddressNormalized: walletAddress.toLowerCase(),
+    },
+  ]);
+  const certificateModel = createFakeCertificateModel([
+    {
+      certificateId: "CERT-2026-000000001",
+      txHash: "0xissued",
+      certificateHash: "0xhash",
+      tokenId: "1",
+      studentName: "Student",
+      studentEmail: "student@rub.edu.bt",
+      studentWalletAddress: walletAddress,
+      studentWalletAddressNormalized: walletAddress.toLowerCase(),
+      certificateType: "Bachelor of Science",
+      issueDate: "2026-04-21",
+      issuedAt: new Date("2026-04-21T10:00:00Z"),
+      revoked: false,
+    },
+  ]);
+
+  const { app } = createTestApp({ userModel, certificateModel });
+  const agent = request.agent(app);
+
+  await agent.post("/api/auth/login").send({
+    identifier: "student",
+    password: "StudentPass123!",
+  });
+
+  const response = await agent.get("/api/student/certificates");
+  assert.equal(response.status, 200);
+  assert.equal(response.body.certificates.length, 1);
+  assert.equal(response.body.certificates[0].certificateId, "CERT-2026-000000001");
 });
 
 test("issue endpoint rejects invalid wallet address before issuing", async () => {
@@ -547,7 +679,7 @@ test("admin session can bulk issue certificates", async () => {
     return { txHash: `0xissued${issuedPayloads.length}` };
   };
 
-  const { app } = createTestApp({ userModel, issueCertificate });
+  const { app, certificateModel } = createTestApp({ userModel, issueCertificate });
   const agent = request.agent(app);
 
   await loginAdmin(agent);
@@ -581,4 +713,6 @@ test("admin session can bulk issue certificates", async () => {
   assert.equal(issuedPayloads[0].studentName, "Recipient One");
   assert.equal(issuedPayloads[1].studentEmail, "two@rub.edu.bt");
   assert.equal(issuedPayloads[0].certificateType, "Bachelor of Science");
+  assert.equal(certificateModel._certificates.length, 2);
+  assert.equal(issueResponse.body.issued[0].certificate.studentName, "Recipient One");
 });

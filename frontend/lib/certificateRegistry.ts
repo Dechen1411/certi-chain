@@ -5,17 +5,12 @@ import {
   keccak256,
   toUtf8Bytes,
 } from "ethers";
+import { API_BASE_URL, parseApiError } from "./api";
 
 const registryAbi = [
-  "function issueCertificate(address student, bytes32 certificateHash, string certificateURI) external returns (uint256)",
   "function verifyByHash(bytes32 certificateHash) external view returns (bool exists, bool valid, uint256 tokenId, address student, uint256 issuedAt)",
   "function getCertificate(uint256 tokenId) external view returns (bytes32 certificateHash, uint256 issuedAt, bool revoked, address student, string certificateURI)",
-  "event CertificateIssued(uint256 indexed tokenId, address indexed student, bytes32 indexed certificateHash, string tokenURI)",
-  "event CertificateRevoked(uint256 indexed tokenId, bytes32 indexed certificateHash, string reason)",
 ] as const;
-
-const DEFAULT_EVENT_LOOKBACK_BLOCKS = 10;
-const DEFAULT_EVENT_QUERY_CHUNK_BLOCKS = 10;
 
 export interface StudentCertificateRecord {
   tokenId: string;
@@ -34,6 +29,7 @@ export interface StudentCertificateRecord {
   nftHash: string;
   revoked: boolean;
   tokenUri: string;
+  txHash?: string;
 }
 
 export interface RegistryStats {
@@ -68,39 +64,6 @@ const getChainId = (): number => {
   return configuredChainId;
 };
 
-const getOptionalPositiveIntegerEnv = (value: string | undefined): number | null => {
-  if (!value?.trim()) {
-    return null;
-  }
-
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
-};
-
-const getEventQueryStartBlock = (latestBlock: number): number => {
-  const deploymentBlock = getOptionalPositiveIntegerEnv(
-    import.meta.env.VITE_CERTIFICATE_REGISTRY_DEPLOYMENT_BLOCK,
-  );
-
-  if (deploymentBlock !== null) {
-    return Math.min(deploymentBlock, latestBlock);
-  }
-
-  const lookbackBlocks = getOptionalPositiveIntegerEnv(
-    import.meta.env.VITE_EVENT_LOOKBACK_BLOCKS,
-  ) ?? DEFAULT_EVENT_LOOKBACK_BLOCKS;
-
-  return Math.max(0, latestBlock - lookbackBlocks);
-};
-
-const getEventQueryChunkSize = (): number => {
-  const configuredChunkSize = getOptionalPositiveIntegerEnv(
-    import.meta.env.VITE_EVENT_QUERY_CHUNK_BLOCKS,
-  ) ?? DEFAULT_EVENT_QUERY_CHUNK_BLOCKS;
-
-  return Math.max(1, configuredChunkSize);
-};
-
 const getReadProvider = (): JsonRpcProvider => {
   return new JsonRpcProvider(getRpcUrl(), getChainId(), {
     staticNetwork: true,
@@ -109,20 +72,6 @@ const getReadProvider = (): JsonRpcProvider => {
 
 export const createCertificateHash = (certificateId: string): string => {
   return keccak256(toUtf8Bytes(certificateId.trim().toUpperCase()));
-};
-
-const encodeBase64 = (value: string): string => {
-  const encoded = new TextEncoder().encode(value);
-  let binary = "";
-  encoded.forEach((byte) => {
-    binary += String.fromCharCode(byte);
-  });
-  return btoa(binary);
-};
-
-export const buildCertificateMetadataUri = (metadata: Record<string, string>): string => {
-  const json = JSON.stringify(metadata);
-  return `data:application/json;base64,${encodeBase64(json)}`;
 };
 
 export const parseMetadataUri = (metadataUri: string): Record<string, string> | null => {
@@ -147,38 +96,6 @@ export const getRegistryReadContract = () => {
   return new Contract(getContractAddress(), registryAbi, provider);
 };
 
-const toCertificateRecord = async (
-  contract: Contract,
-  tokenId: bigint,
-): Promise<StudentCertificateRecord | null> => {
-  const certificateData = await contract.getCertificate(tokenId);
-  const certificateHash = String(certificateData[0]);
-  const issuedAt = Number(certificateData[1]);
-  const revoked = Boolean(certificateData[2]);
-  const studentWalletAddress = String(certificateData[3]);
-  const metadataUri = String(certificateData[4]);
-  const metadata = parseMetadataUri(metadataUri);
-
-  return {
-    tokenId: tokenId.toString(),
-    certificateId: metadata?.certificateId || `TOKEN-${tokenId.toString()}`,
-    certificateType: metadata?.certificateType || "Certificate",
-    issueDate: metadata?.issueDate || new Date(issuedAt * 1000).toISOString().split("T")[0],
-    issuedAt,
-    studentName: metadata?.studentName || "Unknown",
-    studentEmail: metadata?.studentEmail || "",
-    studentId: metadata?.studentId || "",
-    studentWalletAddress,
-    completionDate: metadata?.completionDate || "",
-    grade: metadata?.grade || "",
-    department: metadata?.department || "",
-    description: metadata?.notes || "",
-    nftHash: certificateHash,
-    revoked,
-    tokenUri: metadataUri,
-  } satisfies StudentCertificateRecord;
-};
-
 const sortCertificates = (certificates: StudentCertificateRecord[]): StudentCertificateRecord[] => {
   return certificates.sort((a, b) => {
     const byIssuedAt = b.issuedAt - a.issuedAt;
@@ -189,43 +106,32 @@ const sortCertificates = (certificates: StudentCertificateRecord[]): StudentCert
   });
 };
 
-type CertificateIssuedLog = {
-  args?: readonly unknown[];
-};
+const normalizeCertificateRecord = (certificate: StudentCertificateRecord): StudentCertificateRecord => ({
+  ...certificate,
+  tokenId: certificate.tokenId || certificate.certificateId,
+  studentEmail: certificate.studentEmail || "",
+  studentId: certificate.studentId || "",
+  completionDate: certificate.completionDate || "",
+  grade: certificate.grade || "",
+  department: certificate.department || "",
+  description: certificate.description || "",
+  nftHash: certificate.nftHash || "",
+  tokenUri: certificate.tokenUri || "",
+  revoked: Boolean(certificate.revoked),
+  issuedAt: Number(certificate.issuedAt || 0),
+});
 
-const getCertificatesFromFilter = async (
-  filter: ReturnType<Contract["filters"]["CertificateIssued"]>,
-): Promise<StudentCertificateRecord[]> => {
-  const contract = getRegistryReadContract();
-  const provider = getReadProvider();
-  const latestBlock = await provider.getBlockNumber();
-  const startBlock = getEventQueryStartBlock(latestBlock);
-  const queryChunkSize = getEventQueryChunkSize();
-  const logs: CertificateIssuedLog[] = [];
+const fetchCertificateList = async (path: string): Promise<StudentCertificateRecord[]> => {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    credentials: "include",
+  });
 
-  for (let fromBlock = startBlock; fromBlock <= latestBlock; fromBlock += queryChunkSize) {
-    const toBlock = Math.min(fromBlock + queryChunkSize - 1, latestBlock);
-    const chunk = await contract.queryFilter(filter, fromBlock, toBlock);
-    logs.push(...(chunk as CertificateIssuedLog[]));
+  if (!response.ok) {
+    throw new Error(await parseApiError(response));
   }
 
-  const certificates: Array<StudentCertificateRecord | null> = await Promise.all(
-    logs.map(async (log) => {
-      const args = log.args;
-      if (!Array.isArray(args) || args.length === 0) {
-        return null;
-      }
-
-      const tokenId = args[0] as bigint;
-      return toCertificateRecord(contract, tokenId);
-    }),
-  );
-
-  const validCertificates: StudentCertificateRecord[] = certificates.filter(
-    (item): item is StudentCertificateRecord => item !== null,
-  );
-
-  return sortCertificates(validCertificates);
+  const payload = await response.json() as { certificates?: StudentCertificateRecord[] };
+  return sortCertificates((payload.certificates || []).map(normalizeCertificateRecord));
 };
 
 export const getStudentCertificates = async (
@@ -239,31 +145,26 @@ export const getStudentCertificates = async (
     throw new Error("Invalid student wallet address");
   }
 
-  const contract = getRegistryReadContract();
-  const filter = contract.filters.CertificateIssued(null, normalizedAddress, null);
-  return getCertificatesFromFilter(filter);
+  return fetchCertificateList("/student/certificates");
 };
 
 export const getAllCertificates = async (): Promise<StudentCertificateRecord[]> => {
-  const contract = getRegistryReadContract();
-  const filter = contract.filters.CertificateIssued();
-  return getCertificatesFromFilter(filter);
+  return fetchCertificateList("/certificates");
 };
 
 export const getRegistryStats = async (): Promise<RegistryStats> => {
-  const certificates = await getAllCertificates();
-  const currentMonth = new Date().toISOString().slice(0, 7);
-  const revokedCertificates = certificates.filter((certificate) => certificate.revoked).length;
-  const issuedThisMonth = certificates.filter((certificate) => {
-    return certificate.issueDate.slice(0, 7) === currentMonth;
-  }).length;
+  const response = await fetch(`${API_BASE_URL}/certificates/stats`, {
+    credentials: "include",
+  });
 
+  if (!response.ok) {
+    throw new Error(await parseApiError(response));
+  }
+
+  const stats = await response.json() as RegistryStats;
   return {
-    totalCertificates: certificates.length,
-    activeCertificates: certificates.length - revokedCertificates,
-    revokedCertificates,
-    issuedThisMonth,
-    recentCertificates: certificates.slice(0, 5),
+    ...stats,
+    recentCertificates: (stats.recentCertificates || []).map(normalizeCertificateRecord),
   };
 };
 
