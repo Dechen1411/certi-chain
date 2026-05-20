@@ -5,6 +5,7 @@ import { Card } from "./ui/card";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
+import { FancySelect } from "./ui/fancy-select";
 import { toast } from "sonner";
 import { API_BASE_URL, parseApiError } from "../lib/api";
 import { getReadableError } from "../lib/certificateRegistry";
@@ -336,44 +337,24 @@ export function BulkIssueCertificate() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="certificateType">Certificate Type</Label>
-                  <select
+                  <FancySelect
                     id="certificateType"
                     value={certificateType}
-                    onChange={(event) => setCertificateType(event.target.value)}
-                    className={cn(
-                      "border-input flex h-9 w-full min-w-0 rounded-md border bg-input-background px-3 py-1 text-base transition-[color,box-shadow] outline-none md:text-sm",
-                      "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]",
-                      !certificateType && "text-muted-foreground",
-                    )}
-                  >
-                    <option value="">Select certificate type</option>
-                    {CERTIFICATE_TYPE_OPTIONS.map((type) => (
-                      <option key={type} value={type}>
-                        {type}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Select certificate type"
+                    options={CERTIFICATE_TYPE_OPTIONS}
+                    onChange={setCertificateType}
+                  />
                 </div>
 
                 <div>
                   <Label htmlFor="department">Department</Label>
-                  <select
+                  <FancySelect
                     id="department"
                     value={department}
-                    onChange={(event) => setDepartment(event.target.value)}
-                    className={cn(
-                      "border-input flex h-9 w-full min-w-0 rounded-md border bg-input-background px-3 py-1 text-base transition-[color,box-shadow] outline-none md:text-sm",
-                      "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]",
-                      !department && "text-muted-foreground",
-                    )}
-                  >
-                    <option value="">Select department</option>
-                    {DEPARTMENT_OPTIONS.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Select department"
+                    options={DEPARTMENT_OPTIONS}
+                    onChange={setDepartment}
+                  />
                 </div>
               </div>
 

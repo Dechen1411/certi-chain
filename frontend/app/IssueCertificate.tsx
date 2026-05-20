@@ -5,6 +5,7 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
 import { Label } from "./ui/label";
+import { FancySelect } from "./ui/fancy-select";
 import { toast } from "sonner";
 import { API_BASE_URL, parseApiError } from "../lib/api";
 import {
@@ -161,23 +162,13 @@ export function IssueCertificate() {
 
               <div>
                 <Label htmlFor="department">Department</Label>
-                <select
+                <FancySelect
                   id="department"
                   value={formData.department}
-                  onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                  className={cn(
-                    "border-input flex h-9 w-full min-w-0 rounded-md border bg-input-background px-3 py-1 text-base transition-[color,box-shadow] outline-none md:text-sm",
-                    "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]",
-                    !formData.department && "text-muted-foreground",
-                  )}
-                >
-                  <option value="">Select department</option>
-                  {DEPARTMENT_OPTIONS.map((department) => (
-                    <option key={department} value={department}>
-                      {department}
-                    </option>
-                  ))}
-                </select>
+                  placeholder="Select department"
+                  options={DEPARTMENT_OPTIONS}
+                  onChange={(department) => setFormData({ ...formData, department })}
+                />
               </div>
             </div>
           </Card>
@@ -188,24 +179,13 @@ export function IssueCertificate() {
             <div className="space-y-4">
               <div>
                 <Label htmlFor="certificateType">Certificate Type</Label>
-                <select
+                <FancySelect
                   id="certificateType"
                   value={formData.certificateType}
-                  onChange={(e) => setFormData({ ...formData, certificateType: e.target.value })}
-                  className={cn(
-                    "border-input flex h-9 w-full min-w-0 rounded-md border bg-input-background px-3 py-1 text-base transition-[color,box-shadow] outline-none md:text-sm",
-                    "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]",
-                    !formData.certificateType && "text-muted-foreground",
-                  )}
-                  required
-                >
-                  <option value="">Select certificate type</option>
-                  {CERTIFICATE_TYPE_OPTIONS.map((type) => (
-                    <option key={type} value={type}>
-                      {type}
-                    </option>
-                  ))}
-                </select>
+                  placeholder="Select certificate type"
+                  options={CERTIFICATE_TYPE_OPTIONS}
+                  onChange={(certificateType) => setFormData({ ...formData, certificateType })}
+                />
               </div>
 
               <div>
