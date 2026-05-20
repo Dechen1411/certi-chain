@@ -8,6 +8,7 @@ import { Label } from "./ui/label";
 import { toast } from "sonner";
 import { API_BASE_URL, parseApiError } from "../lib/api";
 import { getReadableError } from "../lib/certificateRegistry";
+import { CERTIFICATE_TYPE_OPTIONS } from "../lib/certificateTypes";
 import { DEPARTMENT_OPTIONS } from "../lib/departments";
 import {
   EmptyState,
@@ -194,7 +195,7 @@ export function BulkIssueCertificate() {
     setLastResult(null);
 
     if (!certificateType.trim()) {
-      toast.error("Please enter a certificate type");
+      toast.error("Please select a certificate type");
       return;
     }
 
@@ -335,12 +336,23 @@ export function BulkIssueCertificate() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="certificateType">Certificate Type</Label>
-                  <Input
+                  <select
                     id="certificateType"
                     value={certificateType}
                     onChange={(event) => setCertificateType(event.target.value)}
-                    placeholder="Bachelor of Science in Computer Science"
-                  />
+                    className={cn(
+                      "border-input flex h-9 w-full min-w-0 rounded-md border bg-input-background px-3 py-1 text-base transition-[color,box-shadow] outline-none md:text-sm",
+                      "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]",
+                      !certificateType && "text-muted-foreground",
+                    )}
+                  >
+                    <option value="">Select certificate type</option>
+                    {CERTIFICATE_TYPE_OPTIONS.map((type) => (
+                      <option key={type} value={type}>
+                        {type}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>

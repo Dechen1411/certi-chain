@@ -10,6 +10,7 @@ import { API_BASE_URL, parseApiError } from "../lib/api";
 import {
   getReadableError,
 } from "../lib/certificateRegistry";
+import { CERTIFICATE_TYPE_OPTIONS } from "../lib/certificateTypes";
 import { DEPARTMENT_OPTIONS } from "../lib/departments";
 import {
   PageHeader,
@@ -187,13 +188,24 @@ export function IssueCertificate() {
             <div className="space-y-4">
               <div>
                 <Label htmlFor="certificateType">Certificate Type</Label>
-                <Input
+                <select
                   id="certificateType"
                   value={formData.certificateType}
                   onChange={(e) => setFormData({ ...formData, certificateType: e.target.value })}
-                  placeholder="Bachelor of Science in Computer Science"
+                  className={cn(
+                    "border-input flex h-9 w-full min-w-0 rounded-md border bg-input-background px-3 py-1 text-base transition-[color,box-shadow] outline-none md:text-sm",
+                    "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]",
+                    !formData.certificateType && "text-muted-foreground",
+                  )}
                   required
-                />
+                >
+                  <option value="">Select certificate type</option>
+                  {CERTIFICATE_TYPE_OPTIONS.map((type) => (
+                    <option key={type} value={type}>
+                      {type}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>
