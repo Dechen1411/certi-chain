@@ -152,6 +152,7 @@ const createHelmetOptions = () => ({
       styleSrc: ["'self'", "'unsafe-inline'"],
     },
   },
+  crossOriginOpenerPolicy: false,
   crossOriginEmbedderPolicy: false,
 });
 
