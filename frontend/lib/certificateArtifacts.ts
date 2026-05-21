@@ -141,11 +141,12 @@ export const buildCertificateHtml = (certificate: StudentCertificateRecord): str
 };
 
 export const openCertificatePrintView = (certificate: StudentCertificateRecord): void => {
-  const popup = window.open("", "_blank", "noopener,noreferrer");
+  const popup = window.open("about:blank", "_blank");
   if (!popup) {
     throw new Error("Popup blocked. Allow popups to view the certificate.");
   }
 
+  popup.opener = null;
   popup.document.open();
   popup.document.write(buildCertificateHtml(certificate));
   popup.document.close();
