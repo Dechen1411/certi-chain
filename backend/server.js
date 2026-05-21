@@ -25,6 +25,7 @@ const PRIVY_JWT_VERIFICATION_KEY = process.env.PRIVY_JWT_VERIFICATION_KEY || "";
 const SMTP_HOST = process.env.SMTP_HOST || "";
 const SMTP_PORT = process.env.SMTP_PORT || "587";
 const SMTP_SECURE = process.env.SMTP_SECURE === "true";
+const SMTP_FAMILY = process.env.SMTP_FAMILY || "";
 const SMTP_USER = process.env.SMTP_USER || "";
 const SMTP_PASS = process.env.SMTP_PASS || "";
 const SMTP_FROM = process.env.SMTP_FROM || "";
@@ -94,6 +95,7 @@ const app = createApp({
     host: SMTP_HOST,
     port: SMTP_PORT,
     secure: SMTP_SECURE,
+    family: SMTP_FAMILY,
     user: SMTP_USER,
     pass: SMTP_PASS,
     from: SMTP_FROM,

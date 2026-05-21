@@ -4,22 +4,30 @@ const isSmtpConfigured = ({ host, user, pass }) => {
   return Boolean(host && user && pass);
 };
 
+const parseSmtpFamily = (family) => {
+  const value = Number(family);
+  return value === 4 || value === 6 ? value : undefined;
+};
+
 const createSignupOtpSender = ({
   appName = "CertiChain",
   from,
   host,
   port,
   secure,
+  family,
   user,
   pass,
   allowPreview,
 }) => {
   const configured = isSmtpConfigured({ host, user, pass });
+  const smtpFamily = parseSmtpFamily(family);
   const transporter = configured
     ? nodemailer.createTransport({
         host,
         port: Number(port || 587),
         secure: Boolean(secure),
+        family: smtpFamily,
         auth: { user, pass },
       })
     : null;

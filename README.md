@@ -59,6 +59,7 @@ PRIVY_APP_SECRET=your_privy_app_secret
 SMTP_HOST=smtp.example.com
 SMTP_PORT=587
 SMTP_SECURE=false
+SMTP_FAMILY=4
 SMTP_USER=no-reply@example.com
 SMTP_PASS=your_smtp_password
 SMTP_FROM="CertiChain <no-reply@example.com>"
@@ -110,6 +111,7 @@ Before deploy, configure these Render environment variables:
 - `SMTP_HOST`
 - `SMTP_PORT`
 - `SMTP_SECURE`
+- `SMTP_FAMILY`
 - `SMTP_USER`
 - `SMTP_PASS`
 - `SMTP_FROM`
