@@ -5,12 +5,14 @@ import {
   usePrivy,
   useWallets,
 } from "@privy-io/react-auth";
-import { Copy, LogIn, LogOut, RefreshCcw, Wallet } from "lucide-react";
+import { Copy, LogIn, RefreshCcw, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import type { User } from "../context/AuthContext";
 import { bindStudentWallet } from "../lib/studentWallet";
 import { Button } from "./ui/button";
 import { primaryActionClass } from "./ui/app-primitives";
+
+type WalletLoginMethod = "email" | "wallet";
 
 function getPrimaryEthereumWallet(wallets: ConnectedWallet[]) {
   return (
@@ -50,19 +52,20 @@ export function PrivyStudentWalletActions({
   onCopyWallet,
   onWalletAddressChange,
   onWalletVerified,
+  userEmail = "",
   verifiedWalletAddress = "",
 }: {
   autoSetup?: boolean;
   onCopyWallet: () => Promise<void>;
   onWalletAddressChange: (address: string) => void;
   onWalletVerified: (user: User) => void | Promise<void>;
+  userEmail?: string;
   verifiedWalletAddress?: string;
 }) {
-  const { getAccessToken, login, logout } = usePrivy();
+  const { getAccessToken, login } = usePrivy();
   const { createWallet } = useCreateWallet();
   const [isCreatingWallet, setIsCreatingWallet] = useState(false);
   const [isVerifyingWallet, setIsVerifyingWallet] = useState(false);
-  const [isAutoSetupPaused, setIsAutoSetupPaused] = useState(false);
   const autoLoginAttemptedRef = useRef(false);
   const autoCreateAttemptedRef = useRef(false);
   const autoVerifyWalletRef = useRef("");
@@ -75,6 +78,10 @@ export function PrivyStudentWalletActions({
   const needsServerVerification =
     Boolean(normalizedWalletAddress) &&
     normalizedWalletAddress !== normalizedVerifiedWalletAddress;
+  const getLoginOptions = useCallback((loginMethods: WalletLoginMethod[]) => ({
+    loginMethods,
+    ...(userEmail ? { prefill: { type: "email" as const, value: userEmail } } : {}),
+  }), [userEmail]);
 
   const handleVerifyWallet = useCallback(async (showSuccessToast = true) => {
     if (!walletAddress) {
@@ -132,17 +139,9 @@ export function PrivyStudentWalletActions({
     }
   };
 
-  const handleDisconnectWallet = async () => {
-    setIsAutoSetupPaused(true);
-    await logout();
-    onWalletAddressChange("");
-    toast.success("Wallet disconnected");
-  };
-
   useEffect(() => {
     if (
       !autoSetup ||
-      isAutoSetupPaused ||
       isLoading ||
       authenticated ||
       verifiedWalletAddress ||
@@ -152,13 +151,12 @@ export function PrivyStudentWalletActions({
     }
 
     autoLoginAttemptedRef.current = true;
-    login({ loginMethods: ["email"] });
-  }, [authenticated, autoSetup, isAutoSetupPaused, isLoading, login, verifiedWalletAddress]);
+    login(getLoginOptions(["email"]));
+  }, [authenticated, autoSetup, getLoginOptions, isLoading, login, verifiedWalletAddress]);
 
   useEffect(() => {
     if (
       !autoSetup ||
-      isAutoSetupPaused ||
       isLoading ||
       !authenticated ||
       wallet ||
@@ -186,7 +184,6 @@ export function PrivyStudentWalletActions({
     authenticated,
     autoSetup,
     createWallet,
-    isAutoSetupPaused,
     isCreatingWallet,
     isLoading,
     onWalletAddressChange,
@@ -197,7 +194,6 @@ export function PrivyStudentWalletActions({
   useEffect(() => {
     if (
       !autoSetup ||
-      isAutoSetupPaused ||
       isLoading ||
       !needsServerVerification ||
       isVerifyingWallet ||
@@ -211,7 +207,6 @@ export function PrivyStudentWalletActions({
   }, [
     autoSetup,
     handleVerifyWallet,
-    isAutoSetupPaused,
     isLoading,
     isVerifyingWallet,
     needsServerVerification,
@@ -228,18 +223,36 @@ export function PrivyStudentWalletActions({
   }
 
   if (!authenticated) {
+    if (autoSetup) {
+      return (
+        <Button disabled className={`gap-2 ${primaryActionClass}`}>
+          <RefreshCcw className="h-4 w-4 animate-spin" />
+          Preparing Wallet
+        </Button>
+      );
+    }
+
     return (
       <Button
-        onClick={() => login({ loginMethods: ["email", "wallet"] })}
+        onClick={() => login(getLoginOptions(["email", "wallet"]))}
         className={`gap-2 ${primaryActionClass}`}
       >
         <LogIn className="h-4 w-4" />
-        {autoLoginAttemptedRef.current ? "Continue Wallet Setup" : "Set Up Wallet"}
+        Connect Wallet
       </Button>
     );
   }
 
   if (!wallet) {
+    if (autoSetup) {
+      return (
+        <Button disabled className={`gap-2 ${primaryActionClass}`}>
+          <RefreshCcw className="h-4 w-4 animate-spin" />
+          {isCreatingWallet ? "Creating Wallet" : "Preparing Wallet"}
+        </Button>
+      );
+    }
+
     return (
       <>
         <Button
@@ -254,10 +267,6 @@ export function PrivyStudentWalletActions({
           )}
           {isCreatingWallet ? "Creating Wallet" : "Create Wallet"}
         </Button>
-        <Button variant="outline" className="gap-2" onClick={handleDisconnectWallet}>
-          <LogOut className="h-4 w-4" />
-          Disconnect Wallet
-        </Button>
       </>
     );
   }
@@ -265,21 +274,9 @@ export function PrivyStudentWalletActions({
   if (needsServerVerification) {
     return (
       <>
-        <Button
-          onClick={() => void handleVerifyWallet(true)}
-          disabled={isVerifyingWallet}
-          className={`gap-2 ${primaryActionClass}`}
-        >
-          {isVerifyingWallet ? (
-            <RefreshCcw className="h-4 w-4 animate-spin" />
-          ) : (
-            <Wallet className="h-4 w-4" />
-          )}
-          {isVerifyingWallet ? "Saving Wallet" : wallet.linked ? "Save Wallet" : "Link Wallet"}
-        </Button>
-        <Button variant="outline" className="gap-2" onClick={handleDisconnectWallet}>
-          <LogOut className="h-4 w-4" />
-          Disconnect Wallet
+        <Button variant="outline" className="gap-2" onClick={onCopyWallet}>
+          <Copy className="h-4 w-4" />
+          Copy Address
         </Button>
       </>
     );
@@ -290,10 +287,6 @@ export function PrivyStudentWalletActions({
       <Button variant="outline" className="gap-2" onClick={onCopyWallet}>
         <Copy className="h-4 w-4" />
         Copy Address
-      </Button>
-      <Button variant="outline" className="gap-2" onClick={handleDisconnectWallet}>
-        <LogOut className="h-4 w-4" />
-        Disconnect Wallet
       </Button>
     </>
   );

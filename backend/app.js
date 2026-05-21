@@ -169,7 +169,6 @@ const getCertificateInputError = (certificate) => {
   if (
     !certificate.studentName ||
     !certificate.studentEmail ||
-    !certificate.studentWalletAddress ||
     !certificate.certificateType
   ) {
     return "Missing required certificate fields";
@@ -179,11 +178,44 @@ const getCertificateInputError = (certificate) => {
     return "Invalid student email";
   }
 
-  if (!isAddress(certificate.studentWalletAddress)) {
+  if (certificate.studentWalletAddress && !isAddress(certificate.studentWalletAddress)) {
     return "Invalid student wallet address";
   }
 
   return "";
+};
+
+const resolveCertificateStudentWallet = async (certificate, User) => {
+  if (certificate.studentWalletAddress) {
+    return { certificate };
+  }
+
+  const student = await executeMaybeLean(User.findOne({
+    email: certificate.studentEmail,
+    role: "student",
+  }));
+
+  if (!student) {
+    return {
+      message: "Student account with this email was not found",
+      statusCode: 404,
+    };
+  }
+
+  const walletAddress = normalizeWalletAddress(student.walletAddress);
+  if (!walletAddress) {
+    return {
+      message: "Student has not connected a wallet yet",
+      statusCode: 409,
+    };
+  }
+
+  return {
+    certificate: {
+      ...certificate,
+      studentWalletAddress: walletAddress,
+    },
+  };
 };
 
 const createHelmetOptions = () => ({
@@ -1026,13 +1058,19 @@ const createApp = ({
   };
 
   app.post("/api/certificates/issue", authenticate, requireRole("admin"), async (req, res) => {
-    const certificate = normalizeCertificateInput(req.body);
-    const validationError = getCertificateInputError(certificate);
+    const certificateInput = normalizeCertificateInput(req.body);
+    const validationError = getCertificateInputError(certificateInput);
 
     if (validationError) {
       return res.status(400).json({ message: validationError });
     }
 
+    const resolvedStudent = await resolveCertificateStudentWallet(certificateInput, User);
+    if (resolvedStudent.message) {
+      return res.status(resolvedStudent.statusCode).json({ message: resolvedStudent.message });
+    }
+
+    const certificate = resolvedStudent.certificate;
     const certificateId = createCertificateId();
 
     try {
@@ -1076,7 +1114,7 @@ const createApp = ({
     const usedCertificateIds = new Set();
 
     for (const rawStudent of students) {
-      const certificate = {
+      const certificateInput = {
         ...sharedFields,
         ...normalizeCertificateInput({
           ...rawStudent,
@@ -1087,16 +1125,28 @@ const createApp = ({
           additionalNotes: rawStudent?.additionalNotes || sharedFields.additionalNotes,
         }),
       };
-      const validationError = getCertificateInputError(certificate);
+      const validationError = getCertificateInputError(certificateInput);
 
       if (validationError) {
         failed.push({
-          studentEmail: certificate.studentEmail,
-          studentName: certificate.studentName,
+          studentEmail: certificateInput.studentEmail,
+          studentName: certificateInput.studentName,
           message: validationError,
         });
         continue;
       }
+
+      const resolvedStudent = await resolveCertificateStudentWallet(certificateInput, User);
+      if (resolvedStudent.message) {
+        failed.push({
+          studentEmail: certificateInput.studentEmail,
+          studentName: certificateInput.studentName,
+          message: resolvedStudent.message,
+        });
+        continue;
+      }
+
+      const certificate = resolvedStudent.certificate;
 
       let certificateId = createCertificateId();
       while (usedCertificateIds.has(certificateId)) {

@@ -125,7 +125,7 @@ export function StudentDashboard() {
           <div className="min-w-0 flex-1">
             <h2 className="text-xl text-gray-900 mb-1">Wallet Address</h2>
             <p className="text-sm text-gray-600 mb-4">
-              Use this address to receive and view your certificates. New students are guided through wallet setup after login.
+              Use this address to receive and view your certificates. New students get a wallet prepared automatically after login.
             </p>
 
             <div className="p-3 rounded-lg bg-gray-50 border border-gray-200 min-h-12 flex items-center">
@@ -160,6 +160,7 @@ export function StudentDashboard() {
                 onCopyWallet={handleCopyWallet}
                 onWalletAddressChange={handleWalletAddressChange}
                 onWalletVerified={handleWalletVerified}
+                userEmail={user?.email || ""}
                 verifiedWalletAddress={verifiedWalletAddress}
               />
             ) : (

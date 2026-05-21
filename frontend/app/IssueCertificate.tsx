@@ -25,7 +25,6 @@ export function IssueCertificate() {
     // Student Details
     studentName: "",
     studentEmail: "",
-    studentWalletAddress: "",
     studentId: "",
     department: "",
     
@@ -44,7 +43,7 @@ export function IssueCertificate() {
 
   const handleSubmit = async () => {
     // Validate required fields
-    if (!formData.studentName || !formData.studentEmail || !formData.certificateType || !formData.studentWalletAddress) {
+    if (!formData.studentName || !formData.studentEmail || !formData.certificateType) {
       toast.error("Please fill in all required fields");
       return;
     }
@@ -62,7 +61,6 @@ export function IssueCertificate() {
         studentName: formData.studentName,
         studentEmail: formData.studentEmail,
         studentId: formData.studentId,
-        studentWalletAddress: formData.studentWalletAddress,
         department: formData.department,
         certificateType: formData.certificateType,
         grade: formData.grade,
@@ -85,7 +83,6 @@ export function IssueCertificate() {
       setFormData({
         studentName: "",
         studentEmail: "",
-        studentWalletAddress: "",
         studentId: "",
         department: "",
         certificateType: "",
@@ -105,7 +102,7 @@ export function IssueCertificate() {
     <div className="space-y-6">
       <PageHeader
         title="Issue Certificate"
-        description="Issue a new certificate to a student wallet."
+        description="Issue a new certificate to a student's verified wallet."
         backTo="/admin/dashboard"
       />
 
@@ -135,17 +132,6 @@ export function IssueCertificate() {
                   value={formData.studentEmail}
                   onChange={(e) => setFormData({ ...formData, studentEmail: e.target.value })}
                   placeholder="john@college.edu"
-                  required
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="studentWalletAddress">Student Wallet Address *</Label>
-                <Input
-                  id="studentWalletAddress"
-                  value={formData.studentWalletAddress}
-                  onChange={(e) => setFormData({ ...formData, studentWalletAddress: e.target.value })}
-                  placeholder="0x..."
                   required
                 />
               </div>

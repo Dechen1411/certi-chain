@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { isAddress } from "ethers";
 import { Upload, Users, Award, Plus, Trash2, CheckCircle, XCircle, Download } from "lucide-react";
 import { Card } from "./ui/card";
 import { Button } from "./ui/button";
@@ -23,7 +22,6 @@ interface Student {
   id: string;
   name: string;
   email: string;
-  walletAddress: string;
   studentId: string;
   grade: string;
 }
@@ -52,7 +50,6 @@ const createEmptyStudent = (): Student => ({
   id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
   name: "",
   email: "",
-  walletAddress: "",
   studentId: "",
   grade: "",
 });
@@ -157,13 +154,6 @@ const studentsFromCsv = (text: string): Student[] => {
       id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
       name: getCell(row, headerIndex, ["name", "studentName", "student name"]),
       email: getCell(row, headerIndex, ["email", "studentEmail", "student email"]),
-      walletAddress: getCell(row, headerIndex, [
-        "wallet",
-        "walletAddress",
-        "wallet address",
-        "studentWalletAddress",
-        "student wallet address",
-      ]),
       studentId: getCell(row, headerIndex, ["studentId", "student id", "id"]),
       grade: getCell(row, headerIndex, ["grade", "classification"]),
     }));
@@ -211,10 +201,10 @@ export function BulkIssueCertificate() {
     }
 
     const invalidStudents = students.filter((student) => {
-      return !student.name.trim() || !student.email.trim() || !student.walletAddress.trim();
+      return !student.name.trim() || !student.email.trim();
     });
     if (invalidStudents.length > 0) {
-      toast.error("Every student needs a name, email, and wallet address");
+      toast.error("Every student needs a name and email");
       return;
     }
 
@@ -224,21 +214,9 @@ export function BulkIssueCertificate() {
       return;
     }
 
-    const invalidWallets = students.filter((student) => !isAddress(student.walletAddress.trim()));
-    if (invalidWallets.length > 0) {
-      toast.error(`Fix invalid wallet address in row ${students.indexOf(invalidWallets[0]) + 1}`);
-      return;
-    }
-
     const duplicateEmails = getDuplicateValues(students.map((student) => student.email));
     if (duplicateEmails.length > 0) {
       toast.error(`Duplicate email found: ${duplicateEmails[0]}`);
-      return;
-    }
-
-    const duplicateWallets = getDuplicateValues(students.map((student) => student.walletAddress));
-    if (duplicateWallets.length > 0) {
-      toast.error(`Duplicate wallet found: ${duplicateWallets[0]}`);
       return;
     }
 
@@ -282,8 +260,8 @@ export function BulkIssueCertificate() {
 
   const handleDownloadTemplate = () => {
     const csv = [
-      "name,email,walletAddress,studentId,grade",
-      "Student Name,student@college.edu,0x0000000000000000000000000000000000000000,STU-001,A",
+      "name,email,studentId,grade",
+      "Student Name,student@college.edu,STU-001,A",
     ].join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -305,7 +283,7 @@ export function BulkIssueCertificate() {
     try {
       const importedStudents = studentsFromCsv(await file.text());
       if (importedStudents.length === 0) {
-        toast.error("CSV must include headers for name, email, and wallet address");
+        toast.error("CSV must include headers for name and email");
         return;
       }
 
@@ -325,7 +303,7 @@ export function BulkIssueCertificate() {
     <div className="space-y-6">
       <PageHeader
         title="Bulk Issue Certificates"
-        description="Issue certificates to multiple student wallets at once."
+        description="Issue certificates to multiple students using their verified wallet emails."
         backTo="/admin/dashboard"
       />
 
@@ -387,7 +365,7 @@ export function BulkIssueCertificate() {
               <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
               <p className="text-gray-700 mb-2">Upload CSV file</p>
               <p className="text-sm text-gray-500 mb-4">
-                Headers: name, email, walletAddress, studentId, grade
+                Headers: name, email, studentId, grade
               </p>
               <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
                 <label>
@@ -453,11 +431,6 @@ export function BulkIssueCertificate() {
                       type="email"
                       value={student.email}
                       onChange={(event) => updateStudent(student.id, "email", event.target.value)}
-                    />
-                    <Input
-                      placeholder="Wallet Address *"
-                      value={student.walletAddress}
-                      onChange={(event) => updateStudent(student.id, "walletAddress", event.target.value)}
                     />
                     <Input
                       placeholder="Student ID"

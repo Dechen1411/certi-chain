@@ -64,7 +64,11 @@ const createFakeUserModel = (initialUsers = []) => {
       );
     }
 
-    return null;
+    return cloneUser(
+      users.find((user) => {
+        return Object.entries(query).every(([key, value]) => user[key] === value);
+      }) || null,
+    );
   };
 
   const create = async (data) => {
@@ -631,6 +635,45 @@ test("admin session can issue certificates", async () => {
   assert.equal(certificateModel._certificates[0].studentWalletAddressNormalized, "0x8ba1f109551bd432803012645ac136ddd64dba72");
 });
 
+test("admin can issue certificates using the student's verified wallet email", async () => {
+  const walletAddress = "0x8ba1f109551bD432803012645Ac136ddd64DBA72";
+  const userModel = await createAdminModel();
+  userModel._users.push({
+    id: "student-1",
+    username: "recipient",
+    email: "recipient@rub.edu.bt",
+    passwordHash: "hashed-password",
+    role: "student",
+    name: "Recipient",
+    walletAddress,
+    walletAddressNormalized: walletAddress.toLowerCase(),
+  });
+
+  let issuedPayload = null;
+  const issueCertificate = async (payload) => {
+    issuedPayload = payload;
+    return { txHash: "0xissued" };
+  };
+
+  const { app, certificateModel } = createTestApp({ userModel, issueCertificate });
+  const agent = request.agent(app);
+
+  await loginAdmin(agent);
+
+  const issueResponse = await agent.post("/api/certificates/issue").send({
+    studentName: "Recipient",
+    studentEmail: "recipient@rub.edu.bt",
+    certificateType: "Bachelor of Science",
+    department: "Computer Science",
+    issueDate: "2026-04-21",
+  });
+
+  assert.equal(issueResponse.status, 201);
+  assert.equal(issueResponse.body.certificate.studentWalletAddress, walletAddress);
+  assert.equal(issuedPayload.studentWalletAddress, walletAddress);
+  assert.equal(certificateModel._certificates[0].studentWalletAddressNormalized, walletAddress.toLowerCase());
+});
+
 test("admin can list issued certificates from MongoDB", async () => {
   const userModel = await createAdminModel();
   const certificateModel = createFakeCertificateModel([
@@ -823,6 +866,30 @@ test("admin can create, update, duplicate, and delete certificate templates", as
 
 test("admin session can bulk issue certificates", async () => {
   const userModel = await createAdminModel();
+  const walletOne = "0x8ba1f109551bD432803012645Ac136ddd64DBA72";
+  const walletTwo = "0x1111111111111111111111111111111111111111";
+  userModel._users.push(
+    {
+      id: "student-1",
+      username: "one",
+      email: "one@rub.edu.bt",
+      passwordHash: "hashed-password",
+      role: "student",
+      name: "Recipient One",
+      walletAddress: walletOne,
+      walletAddressNormalized: walletOne.toLowerCase(),
+    },
+    {
+      id: "student-2",
+      username: "two",
+      email: "two@rub.edu.bt",
+      passwordHash: "hashed-password",
+      role: "student",
+      name: "Recipient Two",
+      walletAddress: walletTwo,
+      walletAddressNormalized: walletTwo.toLowerCase(),
+    },
+  );
 
   const issuedPayloads = [];
   const issueCertificate = async (payload) => {
@@ -843,14 +910,12 @@ test("admin session can bulk issue certificates", async () => {
       {
         name: "Recipient One",
         email: "one@rub.edu.bt",
-        walletAddress: "0x8ba1f109551bD432803012645Ac136ddd64DBA72",
         studentId: "STU-1",
         grade: "A",
       },
       {
         name: "Recipient Two",
         email: "two@rub.edu.bt",
-        walletAddress: "0x8ba1f109551bD432803012645Ac136ddd64DBA72",
         studentId: "STU-2",
         grade: "B",
       },
@@ -863,6 +928,8 @@ test("admin session can bulk issue certificates", async () => {
   assert.equal(issuedPayloads.length, 2);
   assert.equal(issuedPayloads[0].studentName, "Recipient One");
   assert.equal(issuedPayloads[1].studentEmail, "two@rub.edu.bt");
+  assert.equal(issuedPayloads[0].studentWalletAddress, walletOne);
+  assert.equal(issuedPayloads[1].studentWalletAddress, walletTwo);
   assert.equal(issuedPayloads[0].certificateType, "Bachelor of Science");
   assert.equal(certificateModel._certificates.length, 2);
   assert.equal(issueResponse.body.issued[0].certificate.studentName, "Recipient One");
