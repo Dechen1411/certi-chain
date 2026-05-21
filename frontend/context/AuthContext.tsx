@@ -26,6 +26,14 @@ interface AuthContextType {
     email: string;
     otp: string;
   }) => Promise<User>;
+  requestPasswordResetOtp: (params: {
+    email: string;
+  }) => Promise<PasswordResetOtpResponse>;
+  verifyPasswordResetOtp: (params: {
+    email: string;
+    otp: string;
+    password: string;
+  }) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<User | null>;
   isAuthenticated: boolean;
@@ -43,6 +51,13 @@ interface SessionResponse {
 }
 
 interface SignupOtpResponse {
+  message: string;
+  email: string;
+  expiresInSeconds: number;
+  otpPreview?: string;
+}
+
+interface PasswordResetOtpResponse {
   message: string;
   email: string;
   expiresInSeconds: number;
@@ -168,6 +183,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return payload.user;
   };
 
+  const requestPasswordResetOtp = async ({ email }: { email: string }): Promise<PasswordResetOtpResponse> => {
+    const response = await fetch(`${API_BASE_URL}/auth/password-reset/request-otp`, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ email }),
+    });
+
+    if (!response.ok) {
+      throw new Error(await parseApiError(response));
+    }
+
+    return response.json() as Promise<PasswordResetOtpResponse>;
+  };
+
+  const verifyPasswordResetOtp = async ({
+    email,
+    otp,
+    password,
+  }: {
+    email: string;
+    otp: string;
+    password: string;
+  }): Promise<void> => {
+    const response = await fetch(`${API_BASE_URL}/auth/password-reset/verify`, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ email, otp, password }),
+    });
+
+    if (!response.ok) {
+      throw new Error(await parseApiError(response));
+    }
+  };
+
   const logout = async () => {
     await fetch(`${API_BASE_URL}/auth/logout`, {
       method: "POST",
@@ -183,6 +238,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         login,
         requestSignupOtp,
         verifySignupOtp,
+        requestPasswordResetOtp,
+        verifyPasswordResetOtp,
         logout,
         refreshUser,
         isAuthenticated: !!user,

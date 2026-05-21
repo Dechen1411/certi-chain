@@ -12,6 +12,9 @@ const rateLimit = require("express-rate-limit");
 const AUTH_COOKIE_NAME = "certifypro_session";
 const SIGNUP_OTP_TTL_MS = 10 * 60 * 1000;
 const SIGNUP_OTP_MAX_ATTEMPTS = 5;
+const PASSWORD_RESET_OTP_TTL_MS = 10 * 60 * 1000;
+const PASSWORD_RESET_OTP_MAX_ATTEMPTS = 5;
+const PASSWORD_RESET_REQUEST_MESSAGE = "If an account exists, a password reset code has been sent";
 
 const executeMaybeLean = async (queryResult) => {
   if (!queryResult) {
@@ -362,6 +365,7 @@ const createApp = ({
   const authCookieOptions = createAuthCookieOptions(isProduction, authCookieMaxAge);
   const allowedOrigins = getAllowedOrigins(frontendOrigin);
   const pendingSignups = new Map();
+  const pendingPasswordResets = new Map();
   const deliverSignupOtp = typeof sendSignupOtp === "function"
     ? sendSignupOtp
     : async ({ otp }) => ({ delivered: false, previewOtp: otp });
@@ -371,6 +375,15 @@ const createApp = ({
     for (const [email, pending] of pendingSignups.entries()) {
       if (pending.expiresAt <= now) {
         pendingSignups.delete(email);
+      }
+    }
+  };
+
+  const deleteExpiredPendingPasswordResets = () => {
+    const now = Date.now();
+    for (const [email, pending] of pendingPasswordResets.entries()) {
+      if (pending.expiresAt <= now) {
+        pendingPasswordResets.delete(email);
       }
     }
   };
@@ -453,6 +466,14 @@ const createApp = ({
     return executeMaybeLean(
       User.findOne({
         $or: [{ email }, { username }],
+      }),
+    );
+  };
+
+  const findUserByEmail = async (email) => {
+    return executeMaybeLean(
+      User.findOne({
+        $or: [{ email }],
       }),
     );
   };
@@ -578,6 +599,112 @@ const createApp = ({
     return res.status(201).json({ user });
   };
 
+  const requestPasswordResetOtp = async (req, res) => {
+    deleteExpiredPendingPasswordResets();
+
+    const email = String(req.body?.email || "").trim().toLowerCase();
+
+    if (!isValidEmail(email)) {
+      return res.status(400).json({ message: "Invalid email address" });
+    }
+
+    const user = await findUserByEmail(email);
+    if (!user) {
+      return res.status(202).json({
+        message: PASSWORD_RESET_REQUEST_MESSAGE,
+        email,
+        expiresInSeconds: Math.floor(PASSWORD_RESET_OTP_TTL_MS / 1000),
+      });
+    }
+
+    const otp = createSignupOtp();
+    const expiresAt = Date.now() + PASSWORD_RESET_OTP_TTL_MS;
+    const expiresInMinutes = Math.ceil(PASSWORD_RESET_OTP_TTL_MS / 60_000);
+
+    let otpResult;
+    try {
+      const otpHash = await bcrypt.hash(otp, 10);
+      otpResult = await deliverSignupOtp({
+        email: user.email,
+        name: user.name,
+        otp,
+        expiresInMinutes,
+        subject: "CertiChain password reset code",
+        intro: "Your CertiChain password reset code is",
+        ignoreText: "If you did not request a password reset, you can ignore this email.",
+      });
+
+      pendingPasswordResets.set(email, {
+        email: user.email,
+        otpHash,
+        expiresAt,
+        attempts: 0,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to send password reset code";
+      return res.status(503).json({ message });
+    }
+
+    return res.status(202).json({
+      message: PASSWORD_RESET_REQUEST_MESSAGE,
+      email,
+      expiresInSeconds: Math.floor(PASSWORD_RESET_OTP_TTL_MS / 1000),
+      otpPreview: otpResult?.previewOtp || undefined,
+    });
+  };
+
+  const verifyPasswordResetOtp = async (req, res) => {
+    deleteExpiredPendingPasswordResets();
+
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    const otp = String(req.body?.otp || "").trim();
+    const password = String(req.body?.password || "");
+
+    if (!isValidEmail(email)) {
+      return res.status(400).json({ message: "Invalid email address" });
+    }
+
+    if (!isValidOtp(otp)) {
+      return res.status(400).json({ message: "Enter the 6-digit verification code" });
+    }
+
+    if (password.length < 8) {
+      return res.status(400).json({ message: "Password must be at least 8 characters" });
+    }
+
+    const pending = pendingPasswordResets.get(email);
+    if (!pending) {
+      return res.status(400).json({ message: "Password reset code expired or not requested" });
+    }
+
+    if (pending.expiresAt <= Date.now()) {
+      pendingPasswordResets.delete(email);
+      return res.status(400).json({ message: "Password reset code expired. Request a new code." });
+    }
+
+    const isMatch = await bcrypt.compare(otp, pending.otpHash);
+    if (!isMatch) {
+      pending.attempts += 1;
+      if (pending.attempts >= PASSWORD_RESET_OTP_MAX_ATTEMPTS) {
+        pendingPasswordResets.delete(email);
+        return res.status(400).json({ message: "Too many invalid attempts. Request a new code." });
+      }
+
+      return res.status(400).json({ message: "Invalid verification code" });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    const updatedUser = await User.findOneAndUpdate({ email: pending.email }, { passwordHash });
+
+    pendingPasswordResets.delete(email);
+
+    if (!updatedUser) {
+      return res.status(404).json({ message: "Account not found" });
+    }
+
+    return res.json({ message: "Password reset successful" });
+  };
+
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true });
   });
@@ -613,6 +740,8 @@ const createApp = ({
   app.post("/api/auth/signup", authLimiter, requestSignupOtp);
   app.post("/api/auth/signup/request-otp", authLimiter, requestSignupOtp);
   app.post("/api/auth/signup/verify", authLimiter, verifySignupOtp);
+  app.post("/api/auth/password-reset/request-otp", authLimiter, requestPasswordResetOtp);
+  app.post("/api/auth/password-reset/verify", authLimiter, verifyPasswordResetOtp);
 
   app.post("/api/auth/logout", (_req, res) => {
     res.clearCookie(AUTH_COOKIE_NAME, authCookieOptions);

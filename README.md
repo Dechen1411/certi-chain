@@ -138,10 +138,15 @@ Student wallet login and embedded wallet creation are handled by Privy in the fr
 When a student connects a wallet, the frontend sends Privy's access token to the backend,
 the backend verifies it with `@privy-io/node`, confirms the wallet belongs to that Privy
 user, and saves the verified wallet address on the student record in MongoDB.
+After a student signs in to CertiChain, the dashboard automatically starts Privy email
+wallet setup for accounts without a saved wallet and saves the wallet once Privy proves
+ownership. This keeps the student flow simple while still preventing the backend from
+trusting an email address as wallet ownership.
 
-Student registration uses email OTP verification. The backend stores a pending signup
-with a hashed OTP for 10 minutes, sends the code through SMTP, and only creates the
-student account after `/api/auth/signup/verify` succeeds. In non-production
+Student registration and password reset use email OTP verification. The backend stores
+pending OTPs with hashed codes for 10 minutes, sends the code through SMTP, and only
+creates the student account after `/api/auth/signup/verify` succeeds or updates the
+password after `/api/auth/password-reset/verify` succeeds. In non-production
 development without SMTP configured, the API returns `otpPreview` so local testing can
 continue without an email provider.
 

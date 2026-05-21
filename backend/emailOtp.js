@@ -24,7 +24,15 @@ const createSignupOtpSender = ({
       })
     : null;
 
-  return async ({ email, name, otp, expiresInMinutes }) => {
+  return async ({
+    email,
+    name,
+    otp,
+    expiresInMinutes,
+    subject,
+    intro,
+    ignoreText,
+  }) => {
     if (!transporter) {
       if (allowPreview) {
         return { delivered: false, previewOtp: otp };
@@ -33,25 +41,29 @@ const createSignupOtpSender = ({
       throw new Error("Email verification is not configured");
     }
 
+    const emailSubject = subject || `${appName} verification code`;
+    const introText = intro || `Your ${appName} verification code is`;
+    const fallbackIgnoreText = ignoreText || "If you did not request this account, you can ignore this email.";
+
     await transporter.sendMail({
       from: from || `${appName} <${user}>`,
       to: email,
-      subject: `${appName} verification code`,
+      subject: emailSubject,
       text: [
         `Hi ${name || "there"},`,
         "",
-        `Your ${appName} verification code is ${otp}.`,
+        `${introText} ${otp}.`,
         `It expires in ${expiresInMinutes} minutes.`,
         "",
-        "If you did not request this account, you can ignore this email.",
+        fallbackIgnoreText,
       ].join("\n"),
       html: `
         <div style="font-family: Inter, Arial, sans-serif; color: #101828; line-height: 1.5;">
           <p>Hi ${escapeHtml(name || "there")},</p>
-          <p>Your <strong>${escapeHtml(appName)}</strong> verification code is:</p>
+          <p>${escapeHtml(introText)}:</p>
           <p style="font-size: 28px; font-weight: 800; letter-spacing: 6px; margin: 20px 0;">${escapeHtml(otp)}</p>
           <p>This code expires in ${escapeHtml(String(expiresInMinutes))} minutes.</p>
-          <p style="color: #64748b;">If you did not request this account, you can ignore this email.</p>
+          <p style="color: #64748b;">${escapeHtml(fallbackIgnoreText)}</p>
         </div>
       `,
     });

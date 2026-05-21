@@ -312,6 +312,105 @@ test("signup verification rejects invalid OTP without creating an account", asyn
   assert.equal(userModel._users.length, 0);
 });
 
+test("password reset updates password after OTP verification", async () => {
+  const studentHash = await bcrypt.hash("StudentPass123!", 12);
+  const userModel = createFakeUserModel([
+    {
+      id: "student-1",
+      username: "student",
+      email: "student@rub.edu.bt",
+      passwordHash: studentHash,
+      role: "student",
+      name: "Student",
+    },
+  ]);
+  const { app, userModel: model } = createTestApp({ userModel });
+
+  const otpResponse = await request(app)
+    .post("/api/auth/password-reset/request-otp")
+    .send({ email: "student@rub.edu.bt" });
+
+  assert.equal(otpResponse.status, 202);
+  assert.match(otpResponse.body.otpPreview, /^\d{6}$/);
+
+  const resetResponse = await request(app)
+    .post("/api/auth/password-reset/verify")
+    .send({
+      email: "student@rub.edu.bt",
+      otp: otpResponse.body.otpPreview,
+      password: "NewStudentPass123!",
+    });
+
+  assert.equal(resetResponse.status, 200);
+  assert.equal(resetResponse.body.message, "Password reset successful");
+  assert.equal(await bcrypt.compare("NewStudentPass123!", model._users[0].passwordHash), true);
+
+  const oldLoginResponse = await request(app)
+    .post("/api/auth/login")
+    .send({
+      identifier: "student@rub.edu.bt",
+      password: "StudentPass123!",
+    });
+
+  assert.equal(oldLoginResponse.status, 401);
+
+  const newLoginResponse = await request(app)
+    .post("/api/auth/login")
+    .send({
+      identifier: "student@rub.edu.bt",
+      password: "NewStudentPass123!",
+    });
+
+  assert.equal(newLoginResponse.status, 200);
+  assert.equal(newLoginResponse.body.user.email, "student@rub.edu.bt");
+});
+
+test("password reset rejects invalid OTP without changing password", async () => {
+  const studentHash = await bcrypt.hash("StudentPass123!", 12);
+  const userModel = createFakeUserModel([
+    {
+      id: "student-1",
+      username: "student",
+      email: "student@rub.edu.bt",
+      passwordHash: studentHash,
+      role: "student",
+      name: "Student",
+    },
+  ]);
+  const { app, userModel: model } = createTestApp({ userModel });
+
+  const otpResponse = await request(app)
+    .post("/api/auth/password-reset/request-otp")
+    .send({ email: "student@rub.edu.bt" });
+
+  assert.equal(otpResponse.status, 202);
+
+  const resetResponse = await request(app)
+    .post("/api/auth/password-reset/verify")
+    .send({
+      email: "student@rub.edu.bt",
+      otp: "000000",
+      password: "NewStudentPass123!",
+    });
+
+  assert.equal(resetResponse.status, 400);
+  assert.equal(resetResponse.body.message, "Invalid verification code");
+  assert.equal(await bcrypt.compare("StudentPass123!", model._users[0].passwordHash), true);
+  assert.equal(await bcrypt.compare("NewStudentPass123!", model._users[0].passwordHash), false);
+});
+
+test("password reset request does not reveal missing accounts", async () => {
+  const { app } = createTestApp();
+
+  const response = await request(app)
+    .post("/api/auth/password-reset/request-otp")
+    .send({ email: "missing@rub.edu.bt" });
+
+  assert.equal(response.status, 202);
+  assert.equal(response.body.message, "If an account exists, a password reset code has been sent");
+  assert.equal(response.body.otpPreview, undefined);
+});
+
 test("issue endpoint requires authentication", async () => {
   const { app } = createTestApp();
 

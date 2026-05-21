@@ -98,7 +98,7 @@ export function StudentDashboard() {
     <div className="space-y-8">
       <PageHeader
         title={`Welcome back, ${user?.name || "Student"}`}
-        description="Review your wallet and recently issued certificates."
+        description="Your wallet is prepared automatically so certificates can land in your account."
       />
 
       {/* Stats Grid */}
@@ -125,7 +125,7 @@ export function StudentDashboard() {
           <div className="min-w-0 flex-1">
             <h2 className="text-xl text-gray-900 mb-1">Wallet Address</h2>
             <p className="text-sm text-gray-600 mb-4">
-              Use this address to receive and view your certificates.
+              Use this address to receive and view your certificates. New students are guided through wallet setup after login.
             </p>
 
             <div className="p-3 rounded-lg bg-gray-50 border border-gray-200 min-h-12 flex items-center">
@@ -142,7 +142,7 @@ export function StudentDashboard() {
 
             {!verifiedWalletAddress && connectedWalletAddress && (
               <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                Wallet connected. Verify it before certificates appear here.
+                Wallet detected. Saving it to your student account.
               </div>
             )}
 
@@ -156,6 +156,7 @@ export function StudentDashboard() {
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-[160px]">
             {isPrivyConfigured ? (
               <PrivyStudentWalletActions
+                autoSetup={!verifiedWalletAddress}
                 onCopyWallet={handleCopyWallet}
                 onWalletAddressChange={handleWalletAddressChange}
                 onWalletVerified={handleWalletVerified}

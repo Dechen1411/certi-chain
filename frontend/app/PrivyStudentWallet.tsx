@@ -46,11 +46,13 @@ function useSyncedPrivyWalletAddress(onWalletAddressChange: (address: string) =>
 }
 
 export function PrivyStudentWalletActions({
+  autoSetup = false,
   onCopyWallet,
   onWalletAddressChange,
   onWalletVerified,
   verifiedWalletAddress = "",
 }: {
+  autoSetup?: boolean;
   onCopyWallet: () => Promise<void>;
   onWalletAddressChange: (address: string) => void;
   onWalletVerified: (user: User) => void | Promise<void>;
@@ -60,6 +62,10 @@ export function PrivyStudentWalletActions({
   const { createWallet } = useCreateWallet();
   const [isCreatingWallet, setIsCreatingWallet] = useState(false);
   const [isVerifyingWallet, setIsVerifyingWallet] = useState(false);
+  const [isAutoSetupPaused, setIsAutoSetupPaused] = useState(false);
+  const autoLoginAttemptedRef = useRef(false);
+  const autoCreateAttemptedRef = useRef(false);
+  const autoVerifyWalletRef = useRef("");
   const verificationInFlightRef = useRef(false);
   const { authenticated, ready, wallet, walletAddress, walletsReady } =
     useSyncedPrivyWalletAddress(onWalletAddressChange);
@@ -127,10 +133,90 @@ export function PrivyStudentWalletActions({
   };
 
   const handleDisconnectWallet = async () => {
+    setIsAutoSetupPaused(true);
     await logout();
     onWalletAddressChange("");
     toast.success("Wallet disconnected");
   };
+
+  useEffect(() => {
+    if (
+      !autoSetup ||
+      isAutoSetupPaused ||
+      isLoading ||
+      authenticated ||
+      verifiedWalletAddress ||
+      autoLoginAttemptedRef.current
+    ) {
+      return;
+    }
+
+    autoLoginAttemptedRef.current = true;
+    login({ loginMethods: ["email"] });
+  }, [authenticated, autoSetup, isAutoSetupPaused, isLoading, login, verifiedWalletAddress]);
+
+  useEffect(() => {
+    if (
+      !autoSetup ||
+      isAutoSetupPaused ||
+      isLoading ||
+      !authenticated ||
+      wallet ||
+      verifiedWalletAddress ||
+      isCreatingWallet ||
+      autoCreateAttemptedRef.current
+    ) {
+      return;
+    }
+
+    autoCreateAttemptedRef.current = true;
+    setIsCreatingWallet(true);
+    createWallet()
+      .then((createdWallet) => {
+        onWalletAddressChange(createdWallet.address);
+        toast.success("Wallet ready");
+      })
+      .catch((error) => {
+        const message =
+          error instanceof Error ? error.message : "Unable to create wallet";
+        toast.error(message);
+      })
+      .finally(() => setIsCreatingWallet(false));
+  }, [
+    authenticated,
+    autoSetup,
+    createWallet,
+    isAutoSetupPaused,
+    isCreatingWallet,
+    isLoading,
+    onWalletAddressChange,
+    verifiedWalletAddress,
+    wallet,
+  ]);
+
+  useEffect(() => {
+    if (
+      !autoSetup ||
+      isAutoSetupPaused ||
+      isLoading ||
+      !needsServerVerification ||
+      isVerifyingWallet ||
+      autoVerifyWalletRef.current === normalizedWalletAddress
+    ) {
+      return;
+    }
+
+    autoVerifyWalletRef.current = normalizedWalletAddress;
+    void handleVerifyWallet(false);
+  }, [
+    autoSetup,
+    handleVerifyWallet,
+    isAutoSetupPaused,
+    isLoading,
+    isVerifyingWallet,
+    needsServerVerification,
+    normalizedWalletAddress,
+  ]);
 
   if (isLoading) {
     return (
@@ -148,7 +234,7 @@ export function PrivyStudentWalletActions({
         className={`gap-2 ${primaryActionClass}`}
       >
         <LogIn className="h-4 w-4" />
-        Connect Wallet
+        {autoLoginAttemptedRef.current ? "Continue Wallet Setup" : "Set Up Wallet"}
       </Button>
     );
   }
@@ -166,7 +252,7 @@ export function PrivyStudentWalletActions({
           ) : (
             <Wallet className="h-4 w-4" />
           )}
-          Create Wallet
+          {isCreatingWallet ? "Creating Wallet" : "Create Wallet"}
         </Button>
         <Button variant="outline" className="gap-2" onClick={handleDisconnectWallet}>
           <LogOut className="h-4 w-4" />
@@ -189,7 +275,7 @@ export function PrivyStudentWalletActions({
           ) : (
             <Wallet className="h-4 w-4" />
           )}
-          {isVerifyingWallet ? "Verifying Wallet" : wallet.linked ? "Verify Wallet" : "Link Wallet"}
+          {isVerifyingWallet ? "Saving Wallet" : wallet.linked ? "Save Wallet" : "Link Wallet"}
         </Button>
         <Button variant="outline" className="gap-2" onClick={handleDisconnectWallet}>
           <LogOut className="h-4 w-4" />
