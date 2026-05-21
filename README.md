@@ -60,6 +60,9 @@ SMTP_HOST=smtp.example.com
 SMTP_PORT=587
 SMTP_SECURE=false
 SMTP_FAMILY=4
+SMTP_CONNECTION_TIMEOUT_MS=10000
+SMTP_GREETING_TIMEOUT_MS=10000
+SMTP_SOCKET_TIMEOUT_MS=20000
 SMTP_USER=no-reply@example.com
 SMTP_PASS=your_smtp_password
 SMTP_FROM="CertiChain <no-reply@example.com>"
@@ -112,6 +115,9 @@ Before deploy, configure these Render environment variables:
 - `SMTP_PORT`
 - `SMTP_SECURE`
 - `SMTP_FAMILY`
+- `SMTP_CONNECTION_TIMEOUT_MS`
+- `SMTP_GREETING_TIMEOUT_MS`
+- `SMTP_SOCKET_TIMEOUT_MS`
 - `SMTP_USER`
 - `SMTP_PASS`
 - `SMTP_FROM`

@@ -26,6 +26,9 @@ const SMTP_HOST = process.env.SMTP_HOST || "";
 const SMTP_PORT = process.env.SMTP_PORT || "587";
 const SMTP_SECURE = process.env.SMTP_SECURE === "true";
 const SMTP_FAMILY = process.env.SMTP_FAMILY || "";
+const SMTP_CONNECTION_TIMEOUT_MS = process.env.SMTP_CONNECTION_TIMEOUT_MS || "";
+const SMTP_GREETING_TIMEOUT_MS = process.env.SMTP_GREETING_TIMEOUT_MS || "";
+const SMTP_SOCKET_TIMEOUT_MS = process.env.SMTP_SOCKET_TIMEOUT_MS || "";
 const SMTP_USER = process.env.SMTP_USER || "";
 const SMTP_PASS = process.env.SMTP_PASS || "";
 const SMTP_FROM = process.env.SMTP_FROM || "";
@@ -96,6 +99,9 @@ const app = createApp({
     port: SMTP_PORT,
     secure: SMTP_SECURE,
     family: SMTP_FAMILY,
+    connectionTimeout: SMTP_CONNECTION_TIMEOUT_MS,
+    greetingTimeout: SMTP_GREETING_TIMEOUT_MS,
+    socketTimeout: SMTP_SOCKET_TIMEOUT_MS,
     user: SMTP_USER,
     pass: SMTP_PASS,
     from: SMTP_FROM,

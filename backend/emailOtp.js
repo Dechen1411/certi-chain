@@ -9,6 +9,11 @@ const parseSmtpFamily = (family) => {
   return value === 4 || value === 6 ? value : undefined;
 };
 
+const parseTimeout = (value, fallback) => {
+  const timeout = Number(value);
+  return Number.isFinite(timeout) && timeout > 0 ? timeout : fallback;
+};
+
 const createSignupOtpSender = ({
   appName = "CertiChain",
   from,
@@ -16,18 +21,27 @@ const createSignupOtpSender = ({
   port,
   secure,
   family,
+  connectionTimeout,
+  greetingTimeout,
+  socketTimeout,
   user,
   pass,
   allowPreview,
 }) => {
   const configured = isSmtpConfigured({ host, user, pass });
   const smtpFamily = parseSmtpFamily(family);
+  const smtpConnectionTimeout = parseTimeout(connectionTimeout, 10_000);
+  const smtpGreetingTimeout = parseTimeout(greetingTimeout, 10_000);
+  const smtpSocketTimeout = parseTimeout(socketTimeout, 20_000);
   const transporter = configured
     ? nodemailer.createTransport({
         host,
         port: Number(port || 587),
         secure: Boolean(secure),
         family: smtpFamily,
+        connectionTimeout: smtpConnectionTimeout,
+        greetingTimeout: smtpGreetingTimeout,
+        socketTimeout: smtpSocketTimeout,
         auth: { user, pass },
       })
     : null;

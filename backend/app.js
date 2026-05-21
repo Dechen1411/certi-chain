@@ -499,10 +499,8 @@ const createApp = ({
 
     let otpResult;
     try {
-      const [passwordHash, otpHash] = await Promise.all([
-        bcrypt.hash(signup.password, 12),
-        bcrypt.hash(otp, 10),
-      ]);
+      const passwordHashPromise = bcrypt.hash(signup.password, 12);
+      const otpHashPromise = bcrypt.hash(otp, 10);
 
       otpResult = await deliverSignupOtp({
         email: signup.email,
@@ -510,6 +508,11 @@ const createApp = ({
         otp,
         expiresInMinutes,
       });
+
+      const [passwordHash, otpHash] = await Promise.all([
+        passwordHashPromise,
+        otpHashPromise,
+      ]);
 
       pendingSignups.set(signup.email, {
         id: `${signup.role}-${Date.now()}`,
@@ -623,7 +626,7 @@ const createApp = ({
 
     let otpResult;
     try {
-      const otpHash = await bcrypt.hash(otp, 10);
+      const otpHashPromise = bcrypt.hash(otp, 10);
       otpResult = await deliverSignupOtp({
         email: user.email,
         name: user.name,
@@ -633,6 +636,8 @@ const createApp = ({
         intro: "Your CertiChain password reset code is",
         ignoreText: "If you did not request a password reset, you can ignore this email.",
       });
+
+      const otpHash = await otpHashPromise;
 
       pendingPasswordResets.set(email, {
         email: user.email,
