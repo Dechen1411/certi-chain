@@ -15,6 +15,8 @@ const SIGNUP_OTP_MAX_ATTEMPTS = 5;
 const PASSWORD_RESET_OTP_TTL_MS = 10 * 60 * 1000;
 const PASSWORD_RESET_OTP_MAX_ATTEMPTS = 5;
 const PASSWORD_RESET_REQUEST_MESSAGE = "If an account exists, a password reset code has been sent";
+const SIGNUP_OTP_DELIVERY_FAILURE_MESSAGE = "Could not send verification code right now. Please try again in a moment.";
+const PASSWORD_RESET_OTP_DELIVERY_FAILURE_MESSAGE = "Could not send password reset code right now. Please try again in a moment.";
 
 const executeMaybeLean = async (queryResult) => {
   if (!queryResult) {
@@ -50,6 +52,10 @@ const isValidEmail = (email) => {
 
 const isValidOtp = (otp) => {
   return /^\d{6}$/.test(String(otp || ""));
+};
+
+const logOtpDeliveryFailure = (label, error) => {
+  console.error(`${label} OTP delivery failed:`, error);
 };
 
 const parseOriginList = (value) => {
@@ -526,8 +532,8 @@ const createApp = ({
         attempts: 0,
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to send verification code";
-      return res.status(503).json({ message });
+      logOtpDeliveryFailure("Signup", error);
+      return res.status(503).json({ message: SIGNUP_OTP_DELIVERY_FAILURE_MESSAGE });
     }
 
     return res.status(202).json({
@@ -646,8 +652,8 @@ const createApp = ({
         attempts: 0,
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to send password reset code";
-      return res.status(503).json({ message });
+      logOtpDeliveryFailure("Password reset", error);
+      return res.status(503).json({ message: PASSWORD_RESET_OTP_DELIVERY_FAILURE_MESSAGE });
     }
 
     return res.status(202).json({

@@ -670,7 +670,7 @@ export function Login() {
                 className={`w-full gap-2 ${primaryActionClass}`}
               >
                 <UserPlus className="w-4 h-4" />
-                {isLoading ? "Creating account..." : "Create Account"}
+                {isLoading ? "Sending code..." : "Create Account"}
               </Button>
             </form>
           )}
