@@ -22,6 +22,11 @@ const PRIVY_APP_ID = process.env.PRIVY_APP_ID || process.env.VITE_PRIVY_APP_ID |
 const PRIVY_APP_SECRET = process.env.PRIVY_APP_SECRET || "";
 const PRIVY_API_URL = process.env.PRIVY_API_URL || "";
 const PRIVY_JWT_VERIFICATION_KEY = process.env.PRIVY_JWT_VERIFICATION_KEY || "";
+const BREVO_API_KEY = process.env.BREVO_API_KEY || "";
+const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
+const EMAIL_API_PROVIDER = process.env.EMAIL_API_PROVIDER || (BREVO_API_KEY ? "brevo" : RESEND_API_KEY ? "resend" : "");
+const EMAIL_API_KEY = process.env.EMAIL_API_KEY || BREVO_API_KEY || RESEND_API_KEY || "";
+const EMAIL_API_URL = process.env.EMAIL_API_URL || "";
 const SMTP_HOST = process.env.SMTP_HOST || "";
 const SMTP_PORT = process.env.SMTP_PORT || "587";
 const SMTP_SECURE = process.env.SMTP_SECURE === "true";
@@ -95,6 +100,9 @@ const app = createApp({
   }),
   sendSignupOtp: createSignupOtpSender({
     appName: "CertiChain",
+    emailApiProvider: EMAIL_API_PROVIDER,
+    emailApiKey: EMAIL_API_KEY,
+    emailApiUrl: EMAIL_API_URL,
     host: SMTP_HOST,
     port: SMTP_PORT,
     secure: SMTP_SECURE,

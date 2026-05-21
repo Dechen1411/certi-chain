@@ -3,6 +3,9 @@ const net = require("net");
 const tls = require("tls");
 const nodemailer = require("nodemailer");
 
+const BREVO_EMAIL_API_URL = "https://api.brevo.com/v3/smtp/email";
+const RESEND_EMAIL_API_URL = "https://api.resend.com/emails";
+
 try {
   if (typeof dns.setDefaultResultOrder === "function") {
     dns.setDefaultResultOrder("ipv4first");
@@ -23,6 +26,115 @@ const parseSmtpFamily = (family) => {
 const parseTimeout = (value, fallback) => {
   const timeout = Number(value);
   return Number.isFinite(timeout) && timeout > 0 ? timeout : fallback;
+};
+
+const normalizeEmailApiProvider = (provider) => {
+  const value = String(provider || "").trim().toLowerCase();
+  return value === "brevo" || value === "resend" ? value : "";
+};
+
+const parseEmailAddress = (value, fallbackEmail = "") => {
+  const input = String(value || "").trim();
+  const match = input.match(/^(.*?)<([^>]+)>$/);
+
+  if (!match) {
+    return {
+      email: input || fallbackEmail,
+    };
+  }
+
+  const name = match[1].trim().replace(/^"|"$/g, "");
+
+  return {
+    email: match[2].trim(),
+    ...(name ? { name } : {}),
+  };
+};
+
+const readEmailApiError = async (response) => {
+  try {
+    const body = await response.text();
+    return body ? body.slice(0, 500) : response.statusText;
+  } catch {
+    return response.statusText || "Unknown email API error";
+  }
+};
+
+const assertEmailApiResponse = async (response, provider) => {
+  if (response.ok) {
+    return;
+  }
+
+  const errorBody = await readEmailApiError(response);
+  throw new Error(`${provider} email API failed (${response.status}): ${errorBody}`);
+};
+
+const sendBrevoMail = async ({ apiKey, apiUrl, mail }) => {
+  const sender = parseEmailAddress(mail.from);
+
+  if (!sender.email) {
+    throw new Error("Brevo email API requires a sender email address");
+  }
+
+  const response = await fetch(apiUrl || BREVO_EMAIL_API_URL, {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "api-key": apiKey,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      sender,
+      to: [{ email: mail.to }],
+      subject: mail.subject,
+      htmlContent: mail.html,
+      textContent: mail.text,
+    }),
+  });
+
+  await assertEmailApiResponse(response, "Brevo");
+};
+
+const sendResendMail = async ({ apiKey, apiUrl, mail }) => {
+  const response = await fetch(apiUrl || RESEND_EMAIL_API_URL, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${apiKey}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      from: mail.from,
+      to: [mail.to],
+      subject: mail.subject,
+      html: mail.html,
+      text: mail.text,
+    }),
+  });
+
+  await assertEmailApiResponse(response, "Resend");
+};
+
+const createEmailApiSender = ({ provider, apiKey, apiUrl }) => {
+  const emailProvider = normalizeEmailApiProvider(provider);
+  const key = String(apiKey || "").trim();
+
+  if (!emailProvider || !key) {
+    return null;
+  }
+
+  if (typeof fetch !== "function") {
+    throw new Error("Email API delivery requires Node.js fetch support");
+  }
+
+  if (emailProvider === "brevo") {
+    return (mail) => sendBrevoMail({ apiKey: key, apiUrl, mail });
+  }
+
+  if (emailProvider === "resend") {
+    return (mail) => sendResendMail({ apiKey: key, apiUrl, mail });
+  }
+
+  return null;
 };
 
 const resolveIpv4Address = (host, timeout) => {
@@ -161,9 +273,52 @@ const createIpv4SocketFactory = ({ host, port, timeout }) => {
   };
 };
 
+const createOtpMail = ({
+  appName,
+  from,
+  user,
+  email,
+  name,
+  otp,
+  expiresInMinutes,
+  subject,
+  intro,
+  ignoreText,
+}) => {
+  const emailSubject = subject || `${appName} verification code`;
+  const introText = intro || `Your ${appName} verification code is`;
+  const fallbackIgnoreText = ignoreText || "If you did not request this account, you can ignore this email.";
+
+  return {
+    from: from || `${appName} <${user}>`,
+    to: email,
+    subject: emailSubject,
+    text: [
+      `Hi ${name || "there"},`,
+      "",
+      `${introText} ${otp}.`,
+      `It expires in ${expiresInMinutes} minutes.`,
+      "",
+      fallbackIgnoreText,
+    ].join("\n"),
+    html: `
+      <div style="font-family: Inter, Arial, sans-serif; color: #101828; line-height: 1.5;">
+        <p>Hi ${escapeHtml(name || "there")},</p>
+        <p>${escapeHtml(introText)}:</p>
+        <p style="font-size: 28px; font-weight: 800; letter-spacing: 6px; margin: 20px 0;">${escapeHtml(otp)}</p>
+        <p>This code expires in ${escapeHtml(String(expiresInMinutes))} minutes.</p>
+        <p style="color: #64748b;">${escapeHtml(fallbackIgnoreText)}</p>
+      </div>
+    `,
+  };
+};
+
 const createSignupOtpSender = ({
   appName = "CertiChain",
   from,
+  emailApiProvider,
+  emailApiKey,
+  emailApiUrl,
   host,
   port,
   secure,
@@ -175,7 +330,13 @@ const createSignupOtpSender = ({
   pass,
   allowPreview,
 }) => {
-  const configured = isSmtpConfigured({ host, user, pass });
+  const apiSender = createEmailApiSender({
+    provider: emailApiProvider,
+    apiKey: emailApiKey,
+    apiUrl: emailApiUrl,
+  });
+  const smtpConfigured = isSmtpConfigured({ host, user, pass });
+  const configured = Boolean(apiSender || smtpConfigured);
   const smtpFamily = parseSmtpFamily(family);
   const smtpConnectionTimeout = parseTimeout(connectionTimeout, 10_000);
   const smtpGreetingTimeout = parseTimeout(greetingTimeout, 10_000);
@@ -202,7 +363,7 @@ const createSignupOtpSender = ({
     });
   }
 
-  const transporter = configured
+  const transporter = configured && !apiSender
     ? nodemailer.createTransport(transportOptions)
     : null;
 
@@ -215,7 +376,7 @@ const createSignupOtpSender = ({
     intro,
     ignoreText,
   }) => {
-    if (!transporter) {
+    if (!configured) {
       if (allowPreview) {
         return { delivered: false, previewOtp: otp };
       }
@@ -223,32 +384,29 @@ const createSignupOtpSender = ({
       throw new Error("Email verification is not configured");
     }
 
-    const emailSubject = subject || `${appName} verification code`;
-    const introText = intro || `Your ${appName} verification code is`;
-    const fallbackIgnoreText = ignoreText || "If you did not request this account, you can ignore this email.";
-
-    await transporter.sendMail({
-      from: from || `${appName} <${user}>`,
-      to: email,
-      subject: emailSubject,
-      text: [
-        `Hi ${name || "there"},`,
-        "",
-        `${introText} ${otp}.`,
-        `It expires in ${expiresInMinutes} minutes.`,
-        "",
-        fallbackIgnoreText,
-      ].join("\n"),
-      html: `
-        <div style="font-family: Inter, Arial, sans-serif; color: #101828; line-height: 1.5;">
-          <p>Hi ${escapeHtml(name || "there")},</p>
-          <p>${escapeHtml(introText)}:</p>
-          <p style="font-size: 28px; font-weight: 800; letter-spacing: 6px; margin: 20px 0;">${escapeHtml(otp)}</p>
-          <p>This code expires in ${escapeHtml(String(expiresInMinutes))} minutes.</p>
-          <p style="color: #64748b;">${escapeHtml(fallbackIgnoreText)}</p>
-        </div>
-      `,
+    const mail = createOtpMail({
+      appName,
+      from,
+      user,
+      email,
+      name,
+      otp,
+      expiresInMinutes,
+      subject,
+      intro,
+      ignoreText,
     });
+
+    if (apiSender) {
+      await apiSender(mail);
+      return { delivered: true };
+    }
+
+    if (!transporter) {
+      throw new Error("Email verification is not configured");
+    }
+
+    await transporter.sendMail(mail);
 
     return { delivered: true };
   };

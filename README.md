@@ -56,6 +56,11 @@ CERTIFICATE_REGISTRY_ADDRESS=0x...
 ISSUER_PRIVATE_KEY=0x...
 PRIVY_APP_ID=your_privy_app_id
 PRIVY_APP_SECRET=your_privy_app_secret
+EMAIL_API_PROVIDER=brevo
+EMAIL_API_KEY=your_brevo_api_key
+EMAIL_API_URL=
+BREVO_API_KEY=
+RESEND_API_KEY=
 SMTP_HOST=smtp.example.com
 SMTP_PORT=587
 SMTP_SECURE=false
@@ -111,6 +116,11 @@ Before deploy, configure these Render environment variables:
 - `VITE_PRIVY_APP_ID`
 - `PRIVY_APP_ID`
 - `PRIVY_APP_SECRET`
+- `EMAIL_API_PROVIDER`
+- `EMAIL_API_KEY`
+- `EMAIL_API_URL`
+- `BREVO_API_KEY`
+- `RESEND_API_KEY`
 - `SMTP_HOST`
 - `SMTP_PORT`
 - `SMTP_SECURE`
@@ -152,11 +162,16 @@ ownership. This keeps the student flow simple while still preventing the backend
 trusting an email address as wallet ownership.
 
 Student registration and password reset use email OTP verification. The backend stores
-pending OTPs with hashed codes for 10 minutes, sends the code through SMTP, and only
+pending OTPs with hashed codes for 10 minutes, sends the code through a transactional
+email API such as Brevo or Resend, and only
 creates the student account after `/api/auth/signup/verify` succeeds or updates the
 password after `/api/auth/password-reset/verify` succeeds. In non-production
-development without SMTP configured, the API returns `otpPreview` so local testing can
+development without email delivery configured, the API returns `otpPreview` so local testing can
 continue without an email provider.
+
+For Render deployment, prefer `EMAIL_API_PROVIDER=brevo` plus `EMAIL_API_KEY` or
+`BREVO_API_KEY` because HTTPS email APIs avoid SMTP port timeouts. SMTP settings remain
+available as a fallback for local or hosting environments where outbound SMTP works.
 
 Set `VITE_PRIVY_APP_ID` for the frontend and set `PRIVY_APP_ID` plus
 `PRIVY_APP_SECRET` on the backend. Keep `PRIVY_APP_SECRET` backend-only; never expose it

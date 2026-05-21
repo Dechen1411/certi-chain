@@ -51,6 +51,16 @@ services:
         sync: false
       - key: PRIVY_APP_SECRET
         sync: false
+      - key: EMAIL_API_PROVIDER
+        value: brevo
+      - key: EMAIL_API_KEY
+        sync: false
+      - key: EMAIL_API_URL
+        sync: false
+      - key: BREVO_API_KEY
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
       - key: SMTP_HOST
         sync: false
       - key: SMTP_PORT
