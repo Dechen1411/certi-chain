@@ -245,8 +245,8 @@ const loginAdmin = async (agent) => {
 test("signup ignores requested admin role and creates student account", async () => {
   const { app, userModel } = createTestApp();
 
-  const response = await request(app)
-    .post("/api/auth/signup")
+  const otpResponse = await request(app)
+    .post("/api/auth/signup/request-otp")
     .send({
       email: "student@rub.edu.bt",
       password: "StrongPass123!",
@@ -254,10 +254,62 @@ test("signup ignores requested admin role and creates student account", async ()
       role: "admin",
     });
 
+  assert.equal(otpResponse.status, 202);
+  assert.match(otpResponse.body.otpPreview, /^\d{6}$/);
+  assert.equal(userModel._users.length, 0);
+
+  const response = await request(app)
+    .post("/api/auth/signup/verify")
+    .send({
+      email: "student@rub.edu.bt",
+      otp: otpResponse.body.otpPreview,
+    });
+
   assert.equal(response.status, 201);
   assert.equal(response.body.user.role, "student");
   assert.equal(userModel._users.length, 1);
   assert.equal(userModel._users[0].role, "student");
+});
+
+test("signup rejects invalid email addresses", async () => {
+  const { app, userModel } = createTestApp();
+
+  const response = await request(app)
+    .post("/api/auth/signup/request-otp")
+    .send({
+      email: "not-an-email",
+      password: "StrongPass123!",
+      name: "Student User",
+    });
+
+  assert.equal(response.status, 400);
+  assert.equal(response.body.message, "Invalid email address");
+  assert.equal(userModel._users.length, 0);
+});
+
+test("signup verification rejects invalid OTP without creating an account", async () => {
+  const { app, userModel } = createTestApp();
+
+  const otpResponse = await request(app)
+    .post("/api/auth/signup/request-otp")
+    .send({
+      email: "student@rub.edu.bt",
+      password: "StrongPass123!",
+      name: "Student User",
+    });
+
+  assert.equal(otpResponse.status, 202);
+
+  const response = await request(app)
+    .post("/api/auth/signup/verify")
+    .send({
+      email: "student@rub.edu.bt",
+      otp: "000000",
+    });
+
+  assert.equal(response.status, 400);
+  assert.equal(response.body.message, "Invalid verification code");
+  assert.equal(userModel._users.length, 0);
 });
 
 test("issue endpoint requires authentication", async () => {

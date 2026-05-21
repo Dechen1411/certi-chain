@@ -15,13 +15,17 @@ export interface User {
 interface AuthContextType {
   user: User | null;
   login: (username: string, password: string, role?: "admin" | "student") => Promise<User | null>;
-  signup: (params: {
+  requestSignupOtp: (params: {
     email: string;
     password: string;
     name: string;
     role?: "admin" | "student";
     username?: string;
-  }) => Promise<boolean>;
+  }) => Promise<SignupOtpResponse>;
+  verifySignupOtp: (params: {
+    email: string;
+    otp: string;
+  }) => Promise<User>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<User | null>;
   isAuthenticated: boolean;
@@ -36,6 +40,13 @@ interface AuthResponse {
 
 interface SessionResponse {
   user: User | null;
+}
+
+interface SignupOtpResponse {
+  message: string;
+  email: string;
+  expiresInSeconds: number;
+  otpPreview?: string;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -96,7 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return loggedInUser;
   };
 
-  const signup = async ({
+  const requestSignupOtp = async ({
     email,
     password,
     name,
@@ -108,8 +119,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     name: string;
     role?: "admin" | "student";
     username?: string;
-  }): Promise<boolean> => {
-    const response = await fetch(`${API_BASE_URL}/auth/signup`, {
+  }): Promise<SignupOtpResponse> => {
+    const response = await fetch(`${API_BASE_URL}/auth/signup/request-otp`, {
       method: "POST",
       credentials: "include",
       headers: {
@@ -128,12 +139,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error(await parseApiError(response));
     }
 
+    return response.json() as Promise<SignupOtpResponse>;
+  };
+
+  const verifySignupOtp = async ({
+    email,
+    otp,
+  }: {
+    email: string;
+    otp: string;
+  }): Promise<User> => {
+    const response = await fetch(`${API_BASE_URL}/auth/signup/verify`, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ email, otp }),
+    });
+
+    if (!response.ok) {
+      throw new Error(await parseApiError(response));
+    }
+
     const payload = await response.json() as AuthResponse;
-    const sessionUser = payload.user;
+    setUser(payload.user);
 
-    setUser(sessionUser);
-
-    return true;
+    return payload.user;
   };
 
   const logout = async () => {
@@ -149,7 +181,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         user,
         login,
-        signup,
+        requestSignupOtp,
+        verifySignupOtp,
         logout,
         refreshUser,
         isAuthenticated: !!user,

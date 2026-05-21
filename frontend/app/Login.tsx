@@ -10,11 +10,13 @@ import { IconBadge, primaryActionClass, subtlePanelClass } from "./ui/app-primit
 import { cn } from "./ui/utils";
 
 const ALLOWED_STUDENT_DOMAIN = "@rub.edu.bt";
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function Login() {
   const navigate = useNavigate();
-  const { login, signup } = useAuth();
+  const { login, requestSignupOtp, verifySignupOtp } = useAuth();
   const [mode, setMode] = useState<"login" | "register">("login");
+  const [isAwaitingOtp, setIsAwaitingOtp] = useState(false);
 
   const [loginData, setLoginData] = useState({
     identifier: "",
@@ -30,6 +32,10 @@ export function Login() {
 
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [otpCode, setOtpCode] = useState("");
+  const [pendingSignupEmail, setPendingSignupEmail] = useState("");
+  const [otpPreview, setOtpPreview] = useState("");
+  const [otpExpiresIn, setOtpExpiresIn] = useState(0);
 
   const navigateByRole = (role: "admin" | "student") => {
     if (role === "admin") {
@@ -37,6 +43,14 @@ export function Login() {
       return;
     }
     navigate("/student/dashboard");
+  };
+
+  const resetOtpState = () => {
+    setIsAwaitingOtp(false);
+    setOtpCode("");
+    setPendingSignupEmail("");
+    setOtpPreview("");
+    setOtpExpiresIn(0);
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -62,8 +76,7 @@ export function Login() {
     navigateByRole(user.role);
   };
 
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const requestRegistrationOtp = async () => {
     setError("");
 
     if (registerData.password !== registerData.confirmPassword) {
@@ -77,6 +90,11 @@ export function Login() {
     }
 
     const normalizedEmail = registerData.email.trim().toLowerCase();
+    if (!emailPattern.test(normalizedEmail)) {
+      setError("Enter a valid email address");
+      return;
+    }
+
     if (!normalizedEmail.endsWith(ALLOWED_STUDENT_DOMAIN)) {
       setError("Student account requires @rub.edu.bt email");
       return;
@@ -84,22 +102,51 @@ export function Login() {
 
     setIsLoading(true);
 
-    let success = false;
     try {
-      success = await signup({
+      const payload = await requestSignupOtp({
         email: normalizedEmail,
         password: registerData.password,
         name: registerData.name,
         role: "student",
       });
+      setPendingSignupEmail(payload.email || normalizedEmail);
+      setOtpPreview(payload.otpPreview || "");
+      setOtpExpiresIn(payload.expiresInSeconds || 0);
+      setOtpCode("");
+      setIsAwaitingOtp(true);
     } catch (error) {
       setError(error instanceof Error ? error.message : "Unable to create account right now. Please try again.");
       setIsLoading(false);
       return;
     }
 
-    if (!success) {
-      setError("Email or username already registered");
+    setIsLoading(false);
+  };
+
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await requestRegistrationOtp();
+  };
+
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+
+    const normalizedOtp = otpCode.trim();
+    if (!/^\d{6}$/.test(normalizedOtp)) {
+      setError("Enter the 6-digit verification code");
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      await verifySignupOtp({
+        email: pendingSignupEmail,
+        otp: normalizedOtp,
+      });
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Unable to verify the code right now. Please try again.");
       setIsLoading(false);
       return;
     }
@@ -127,6 +174,7 @@ export function Login() {
               onClick={() => {
                 setMode("login");
                 setError("");
+                resetOtpState();
               }}
             >
               Login
@@ -185,6 +233,72 @@ export function Login() {
                 <LogIn className="w-4 h-4" />
                 {isLoading ? "Signing in..." : "Sign In"}
               </Button>
+            </form>
+          ) : isAwaitingOtp ? (
+            <form onSubmit={handleVerifyOtp} className="space-y-4">
+              <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
+                <p className="text-sm text-blue-900">
+                  We sent a 6-digit verification code to <span className="font-semibold">{pendingSignupEmail}</span>.
+                  {otpExpiresIn > 0 ? ` It expires in ${Math.ceil(otpExpiresIn / 60)} minutes.` : ""}
+                </p>
+                {otpPreview && (
+                  <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                    Development OTP: <span className="font-semibold tracking-widest">{otpPreview}</span>
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <Label htmlFor="otpCode">Verification Code</Label>
+                <Input
+                  id="otpCode"
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={otpCode}
+                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  placeholder="Enter 6-digit code"
+                  required
+                />
+              </div>
+
+              {error && (
+                <div className="flex items-center gap-2 p-3 bg-red-50 text-red-700 rounded-lg">
+                  <AlertCircle className="w-5 h-5" />
+                  <span className="text-sm">{error}</span>
+                </div>
+              )}
+
+              <Button
+                type="submit"
+                disabled={isLoading}
+                className={`w-full gap-2 ${primaryActionClass}`}
+              >
+                <UserPlus className="w-4 h-4" />
+                {isLoading ? "Verifying..." : "Verify & Create Account"}
+              </Button>
+
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={isLoading}
+                  onClick={() => {
+                    setError("");
+                    resetOtpState();
+                  }}
+                >
+                  Edit Details
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={isLoading}
+                  onClick={() => void requestRegistrationOtp()}
+                >
+                  Resend Code
+                </Button>
+              </div>
             </form>
           ) : (
             <form onSubmit={handleRegister} className="space-y-4">

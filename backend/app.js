@@ -10,6 +10,8 @@ const path = require("path");
 const rateLimit = require("express-rate-limit");
 
 const AUTH_COOKIE_NAME = "certifypro_session";
+const SIGNUP_OTP_TTL_MS = 10 * 60 * 1000;
+const SIGNUP_OTP_MAX_ATTEMPTS = 5;
 
 const executeMaybeLean = async (queryResult) => {
   if (!queryResult) {
@@ -33,6 +35,18 @@ const createCertificateHash = (certificateId) => {
 
 const createTemplateId = () => {
   return `template-${randomUUID()}`;
+};
+
+const createSignupOtp = () => {
+  return randomInt(0, 1_000_000).toString().padStart(6, "0");
+};
+
+const isValidEmail = (email) => {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || ""));
+};
+
+const isValidOtp = (otp) => {
+  return /^\d{6}$/.test(String(otp || ""));
 };
 
 const parseOriginList = (value) => {
@@ -74,6 +88,38 @@ const normalizeTemplateInput = (body) => ({
   color: String(body?.color || "").trim() || "from-slate-700 to-slate-900",
   uses: Number.isFinite(Number(body?.uses)) ? Math.max(0, Number(body.uses)) : undefined,
 });
+
+const normalizeSignupInput = (body) => {
+  const email = String(body?.email || "").trim().toLowerCase();
+
+  return {
+    email,
+    password: String(body?.password || ""),
+    name: String(body?.name || "").trim(),
+    username: String(body?.username || email).trim().toLowerCase(),
+    role: "student",
+  };
+};
+
+const getSignupInputError = (signup, allowedStudentDomain) => {
+  if (!signup.email || !signup.password || !signup.name) {
+    return "Name, email and password are required";
+  }
+
+  if (!isValidEmail(signup.email)) {
+    return "Invalid email address";
+  }
+
+  if (signup.password.length < 8) {
+    return "Password must be at least 8 characters";
+  }
+
+  if (!signup.email.endsWith(allowedStudentDomain)) {
+    return `Student account requires ${allowedStudentDomain} email`;
+  }
+
+  return "";
+};
 
 const getTemplateInputError = (template) => {
   if (!template.name || !template.title) {
@@ -120,7 +166,7 @@ const getCertificateInputError = (certificate) => {
     return "Missing required certificate fields";
   }
 
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(certificate.studentEmail)) {
+  if (!isValidEmail(certificate.studentEmail)) {
     return "Invalid student email";
   }
 
@@ -306,6 +352,7 @@ const createApp = ({
   isProduction,
   staticRoot,
   verifyPrivyAccessToken,
+  sendSignupOtp,
 }) => {
   if (!jwtSecret) {
     throw new Error("Missing JWT_SECRET in backend environment");
@@ -314,6 +361,19 @@ const createApp = ({
   const authCookieMaxAge = parseExpiresInMs(jwtExpiresIn);
   const authCookieOptions = createAuthCookieOptions(isProduction, authCookieMaxAge);
   const allowedOrigins = getAllowedOrigins(frontendOrigin);
+  const pendingSignups = new Map();
+  const deliverSignupOtp = typeof sendSignupOtp === "function"
+    ? sendSignupOtp
+    : async ({ otp }) => ({ delivered: false, previewOtp: otp });
+
+  const deleteExpiredPendingSignups = () => {
+    const now = Date.now();
+    for (const [email, pending] of pendingSignups.entries()) {
+      if (pending.expiresAt <= now) {
+        pendingSignups.delete(email);
+      }
+    }
+  };
 
   const corsOptions = {
     origin(origin, callback) {
@@ -389,6 +449,135 @@ const createApp = ({
     return next();
   };
 
+  const findExistingUser = async ({ email, username }) => {
+    return executeMaybeLean(
+      User.findOne({
+        $or: [{ email }, { username }],
+      }),
+    );
+  };
+
+  const requestSignupOtp = async (req, res) => {
+    deleteExpiredPendingSignups();
+
+    const signup = normalizeSignupInput(req.body);
+    const validationError = getSignupInputError(signup, allowedStudentDomain);
+
+    if (validationError) {
+      return res.status(400).json({ message: validationError });
+    }
+
+    const existing = await findExistingUser(signup);
+    if (existing) {
+      return res.status(409).json({ message: "Email or username already registered" });
+    }
+
+    const otp = createSignupOtp();
+    const expiresAt = Date.now() + SIGNUP_OTP_TTL_MS;
+    const expiresInMinutes = Math.ceil(SIGNUP_OTP_TTL_MS / 60_000);
+
+    let otpResult;
+    try {
+      const [passwordHash, otpHash] = await Promise.all([
+        bcrypt.hash(signup.password, 12),
+        bcrypt.hash(otp, 10),
+      ]);
+
+      otpResult = await deliverSignupOtp({
+        email: signup.email,
+        name: signup.name,
+        otp,
+        expiresInMinutes,
+      });
+
+      pendingSignups.set(signup.email, {
+        id: `${signup.role}-${Date.now()}`,
+        email: signup.email,
+        username: signup.username,
+        name: signup.name,
+        passwordHash,
+        role: signup.role,
+        otpHash,
+        expiresAt,
+        attempts: 0,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to send verification code";
+      return res.status(503).json({ message });
+    }
+
+    return res.status(202).json({
+      message: otpResult?.delivered ? "Verification code sent" : "Verification code generated",
+      email: signup.email,
+      expiresInSeconds: Math.floor(SIGNUP_OTP_TTL_MS / 1000),
+      otpPreview: otpResult?.previewOtp || undefined,
+    });
+  };
+
+  const verifySignupOtp = async (req, res) => {
+    deleteExpiredPendingSignups();
+
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    const otp = String(req.body?.otp || "").trim();
+
+    if (!isValidEmail(email)) {
+      return res.status(400).json({ message: "Invalid email address" });
+    }
+
+    if (!isValidOtp(otp)) {
+      return res.status(400).json({ message: "Enter the 6-digit verification code" });
+    }
+
+    const pending = pendingSignups.get(email);
+    if (!pending) {
+      return res.status(400).json({ message: "Verification code expired or not requested" });
+    }
+
+    if (pending.expiresAt <= Date.now()) {
+      pendingSignups.delete(email);
+      return res.status(400).json({ message: "Verification code expired. Request a new code." });
+    }
+
+    const isMatch = await bcrypt.compare(otp, pending.otpHash);
+    if (!isMatch) {
+      pending.attempts += 1;
+      if (pending.attempts >= SIGNUP_OTP_MAX_ATTEMPTS) {
+        pendingSignups.delete(email);
+        return res.status(400).json({ message: "Too many invalid attempts. Request a new code." });
+      }
+
+      return res.status(400).json({ message: "Invalid verification code" });
+    }
+
+    const existing = await findExistingUser(pending);
+    if (existing) {
+      pendingSignups.delete(email);
+      return res.status(409).json({ message: "Email or username already registered" });
+    }
+
+    await User.create({
+      id: pending.id,
+      username: pending.username,
+      email: pending.email,
+      passwordHash: pending.passwordHash,
+      role: pending.role,
+      name: pending.name,
+    });
+
+    pendingSignups.delete(email);
+
+    const user = {
+      id: pending.id,
+      username: pending.username,
+      email: pending.email,
+      role: pending.role,
+      name: pending.name,
+    };
+    const token = issueToken(user);
+    res.cookie(AUTH_COOKIE_NAME, token, authCookieOptions);
+    return res.status(201).json({ user });
+  };
+
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true });
   });
@@ -421,51 +610,9 @@ const createApp = ({
     return res.json({ user: publicUser });
   });
 
-  app.post("/api/auth/signup", authLimiter, async (req, res) => {
-    const email = String(req.body?.email || "").trim().toLowerCase();
-    const password = String(req.body?.password || "");
-    const name = String(req.body?.name || "").trim();
-    const username = String(req.body?.username || email).trim().toLowerCase();
-    const role = "student";
-
-    if (!email || !password || !name) {
-      return res.status(400).json({ message: "Name, email and password are required" });
-    }
-
-    if (password.length < 8) {
-      return res.status(400).json({ message: "Password must be at least 8 characters" });
-    }
-
-    if (!email.endsWith(allowedStudentDomain)) {
-      return res.status(400).json({ message: `Student account requires ${allowedStudentDomain} email` });
-    }
-
-    const existing = await executeMaybeLean(
-      User.findOne({
-        $or: [{ email }, { username }],
-      }),
-    );
-    if (existing) {
-      return res.status(409).json({ message: "Email or username already registered" });
-    }
-
-    const passwordHash = await bcrypt.hash(password, 12);
-    const id = `${role}-${Date.now()}`;
-
-    await User.create({
-      id,
-      username,
-      email,
-      passwordHash,
-      role,
-      name,
-    });
-
-    const user = { id, username, email, role, name };
-    const token = issueToken(user);
-    res.cookie(AUTH_COOKIE_NAME, token, authCookieOptions);
-    return res.status(201).json({ user });
-  });
+  app.post("/api/auth/signup", authLimiter, requestSignupOtp);
+  app.post("/api/auth/signup/request-otp", authLimiter, requestSignupOtp);
+  app.post("/api/auth/signup/verify", authLimiter, verifySignupOtp);
 
   app.post("/api/auth/logout", (_req, res) => {
     res.clearCookie(AUTH_COOKIE_NAME, authCookieOptions);

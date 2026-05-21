@@ -56,6 +56,12 @@ CERTIFICATE_REGISTRY_ADDRESS=0x...
 ISSUER_PRIVATE_KEY=0x...
 PRIVY_APP_ID=your_privy_app_id
 PRIVY_APP_SECRET=your_privy_app_secret
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=no-reply@example.com
+SMTP_PASS=your_smtp_password
+SMTP_FROM="CertiChain <no-reply@example.com>"
 ```
 
 ## Required Frontend Env
@@ -101,6 +107,12 @@ Before deploy, configure these Render environment variables:
 - `VITE_PRIVY_APP_ID`
 - `PRIVY_APP_ID`
 - `PRIVY_APP_SECRET`
+- `SMTP_HOST`
+- `SMTP_PORT`
+- `SMTP_SECURE`
+- `SMTP_USER`
+- `SMTP_PASS`
+- `SMTP_FROM`
 
 The Render health check is `/api/health`.
 
@@ -126,6 +138,12 @@ Student wallet login and embedded wallet creation are handled by Privy in the fr
 When a student connects a wallet, the frontend sends Privy's access token to the backend,
 the backend verifies it with `@privy-io/node`, confirms the wallet belongs to that Privy
 user, and saves the verified wallet address on the student record in MongoDB.
+
+Student registration uses email OTP verification. The backend stores a pending signup
+with a hashed OTP for 10 minutes, sends the code through SMTP, and only creates the
+student account after `/api/auth/signup/verify` succeeds. In non-production
+development without SMTP configured, the API returns `otpPreview` so local testing can
+continue without an email provider.
 
 Set `VITE_PRIVY_APP_ID` for the frontend and set `PRIVY_APP_ID` plus
 `PRIVY_APP_SECRET` on the backend. Keep `PRIVY_APP_SECRET` backend-only; never expose it

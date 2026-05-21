@@ -6,6 +6,7 @@ const path = require("path");
 const { createApp } = require("./app");
 const { issueCertificateOnChain } = require("./blockchainIssuer");
 const { Certificate, CertificateTemplate, User, connectDb } = require("./db");
+const { createSignupOtpSender } = require("./emailOtp");
 const { createPrivyAccessTokenVerifier } = require("./privy");
 
 const PORT = Number(process.env.PORT || 4000);
@@ -21,6 +22,12 @@ const PRIVY_APP_ID = process.env.PRIVY_APP_ID || process.env.VITE_PRIVY_APP_ID |
 const PRIVY_APP_SECRET = process.env.PRIVY_APP_SECRET || "";
 const PRIVY_API_URL = process.env.PRIVY_API_URL || "";
 const PRIVY_JWT_VERIFICATION_KEY = process.env.PRIVY_JWT_VERIFICATION_KEY || "";
+const SMTP_HOST = process.env.SMTP_HOST || "";
+const SMTP_PORT = process.env.SMTP_PORT || "587";
+const SMTP_SECURE = process.env.SMTP_SECURE === "true";
+const SMTP_USER = process.env.SMTP_USER || "";
+const SMTP_PASS = process.env.SMTP_PASS || "";
+const SMTP_FROM = process.env.SMTP_FROM || "";
 const STATIC_ROOT = process.env.STATIC_ROOT || path.resolve(__dirname, "..", "frontend", "dist");
 const staticRoot = process.env.NODE_ENV === "production" && fs.existsSync(path.join(STATIC_ROOT, "index.html"))
   ? STATIC_ROOT
@@ -81,6 +88,16 @@ const app = createApp({
     appSecret: PRIVY_APP_SECRET,
     apiUrl: PRIVY_API_URL,
     jwtVerificationKey: PRIVY_JWT_VERIFICATION_KEY,
+  }),
+  sendSignupOtp: createSignupOtpSender({
+    appName: "CertiChain",
+    host: SMTP_HOST,
+    port: SMTP_PORT,
+    secure: SMTP_SECURE,
+    user: SMTP_USER,
+    pass: SMTP_PASS,
+    from: SMTP_FROM,
+    allowPreview: process.env.NODE_ENV !== "production",
   }),
 });
 
