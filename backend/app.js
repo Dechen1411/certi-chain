@@ -50,6 +50,32 @@ const isValidEmail = (email) => {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || ""));
 };
 
+const getTodayDateString = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const isValidDateOnly = (value) => {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) {
+    return false;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+
+  return (
+    parsed.getUTCFullYear() === year &&
+    parsed.getUTCMonth() + 1 === month &&
+    parsed.getUTCDate() === day
+  );
+};
+
 const isValidOtp = (otp) => {
   return /^\d{6}$/.test(String(otp || ""));
 };
@@ -80,7 +106,7 @@ const normalizeCertificateInput = (body) => ({
   certificateType: String(body?.certificateType || "").trim(),
   department: String(body?.department || "").trim(),
   grade: String(body?.grade || "").trim(),
-  issueDate: String(body?.issueDate || "").trim() || new Date().toISOString().split("T")[0],
+  issueDate: String(body?.issueDate || "").trim() || getTodayDateString(),
   completionDate: String(body?.completionDate || "").trim(),
   additionalNotes: String(body?.additionalNotes || body?.notes || "").trim(),
   studentId: String(body?.studentId || "").trim(),
@@ -176,6 +202,14 @@ const getCertificateInputError = (certificate) => {
 
   if (!isValidEmail(certificate.studentEmail)) {
     return "Invalid student email";
+  }
+
+  if (!isValidDateOnly(certificate.issueDate)) {
+    return "Issue date must be a valid date";
+  }
+
+  if (certificate.issueDate > getTodayDateString()) {
+    return "Issue date cannot be in the future";
   }
 
   if (certificate.studentWalletAddress && !isAddress(certificate.studentWalletAddress)) {

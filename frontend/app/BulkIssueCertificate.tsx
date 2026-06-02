@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { API_BASE_URL, parseApiError } from "../lib/api";
 import { getReadableError } from "../lib/certificateRegistry";
 import { CERTIFICATE_TYPE_OPTIONS } from "../lib/certificateTypes";
+import { getTodayDateInputValue, isFutureDateInputValue } from "../lib/dateInput";
 import { DEPARTMENT_OPTIONS } from "../lib/departments";
 import {
   EmptyState,
@@ -160,9 +161,10 @@ const studentsFromCsv = (text: string): Student[] => {
 };
 
 export function BulkIssueCertificate() {
+  const todayDate = getTodayDateInputValue();
   const [department, setDepartment] = useState("");
   const [certificateType, setCertificateType] = useState("");
-  const [issueDate, setIssueDate] = useState(new Date().toISOString().split("T")[0]);
+  const [issueDate, setIssueDate] = useState(getTodayDateInputValue());
   const [completionDate, setCompletionDate] = useState("");
   const [students, setStudents] = useState<Student[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -187,6 +189,11 @@ export function BulkIssueCertificate() {
 
     if (!certificateType.trim()) {
       toast.error("Please select a certificate type");
+      return;
+    }
+
+    if (isFutureDateInputValue(issueDate)) {
+      toast.error("Issue date cannot be in the future");
       return;
     }
 
@@ -343,6 +350,7 @@ export function BulkIssueCertificate() {
                     id="issueDate"
                     type="date"
                     value={issueDate}
+                    max={todayDate}
                     onChange={(event) => setIssueDate(event.target.value)}
                   />
                 </div>

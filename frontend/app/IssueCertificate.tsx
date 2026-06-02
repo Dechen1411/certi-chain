@@ -12,6 +12,7 @@ import {
   getReadableError,
 } from "../lib/certificateRegistry";
 import { CERTIFICATE_TYPE_OPTIONS } from "../lib/certificateTypes";
+import { getTodayDateInputValue, isFutureDateInputValue } from "../lib/dateInput";
 import { DEPARTMENT_OPTIONS } from "../lib/departments";
 import {
   PageHeader,
@@ -21,6 +22,7 @@ import {
 import { cn } from "./ui/utils";
 
 export function IssueCertificate() {
+  const todayDate = getTodayDateInputValue();
   const [formData, setFormData] = useState({
     // Student Details
     studentName: "",
@@ -31,7 +33,7 @@ export function IssueCertificate() {
     // Certificate Details
     certificateType: "",
     grade: "",
-    issueDate: new Date().toISOString().split('T')[0],
+    issueDate: getTodayDateInputValue(),
     completionDate: "",
     
     // Additional Info
@@ -45,6 +47,11 @@ export function IssueCertificate() {
     // Validate required fields
     if (!formData.studentName || !formData.studentEmail || !formData.certificateType) {
       toast.error("Please fill in all required fields");
+      return;
+    }
+
+    if (isFutureDateInputValue(formData.issueDate)) {
+      toast.error("Issue date cannot be in the future");
       return;
     }
 
@@ -87,7 +94,7 @@ export function IssueCertificate() {
         department: "",
         certificateType: "",
         grade: "",
-        issueDate: new Date().toISOString().split('T')[0],
+        issueDate: getTodayDateInputValue(),
         completionDate: "",
         additionalNotes: "",
       });
@@ -201,6 +208,7 @@ export function IssueCertificate() {
                     id="issueDate"
                     type="date"
                     value={formData.issueDate}
+                    max={todayDate}
                     onChange={(e) => setFormData({ ...formData, issueDate: e.target.value })}
                   />
                 </div>

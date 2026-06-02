@@ -1,3 +1,6 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { QRCodeSVG } from "qrcode.react";
 import { StudentCertificateRecord } from "./certificateRegistry";
 
 const escapeHtml = (value: string | undefined): string => {
@@ -32,8 +35,22 @@ export const formatCertificateDate = (date: string | undefined): string => {
   return parsed.toLocaleDateString();
 };
 
+const buildVerificationQrSvg = (verificationUrl: string): string => {
+  return renderToStaticMarkup(
+    createElement(QRCodeSVG, {
+      value: verificationUrl,
+      size: 112,
+      level: "M",
+      includeMargin: true,
+      bgColor: "#ffffff",
+      fgColor: "#111827",
+    }),
+  );
+};
+
 export const buildCertificateHtml = (certificate: StudentCertificateRecord): string => {
   const verificationUrl = buildCertificateVerificationUrl(certificate.certificateId);
+  const verificationQrSvg = buildVerificationQrSvg(verificationUrl);
   const status = certificate.revoked ? "Revoked" : "Valid";
 
   return `<!doctype html>
@@ -79,15 +96,50 @@ export const buildCertificateHtml = (certificate: StudentCertificateRecord): str
       }
       .detail { padding-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.25); }
       .label { opacity: 0.7; display: block; margin-bottom: 4px; }
-      .hash { overflow-wrap: anywhere; }
+      .hash,
+      .verify-url {
+        overflow-wrap: anywhere;
+        line-height: 1.45;
+      }
       .footer {
-        display: flex;
-        justify-content: space-between;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) auto;
         align-items: end;
-        gap: 24px;
+        gap: 16px;
         font-size: 13px;
       }
-      .verify { max-width: 55%; overflow-wrap: anywhere; opacity: 0.85; }
+      .footer-block {
+        min-height: 82px;
+        padding-top: 10px;
+        border-top: 1px solid rgba(255, 255, 255, 0.25);
+      }
+      .qr-block {
+        width: 128px;
+        text-align: center;
+      }
+      .qr-frame {
+        width: 112px;
+        height: 112px;
+        margin-left: auto;
+        margin-right: auto;
+        display: grid;
+        place-items: center;
+        border: 1px solid rgba(255, 255, 255, 0.48);
+        background: #fff;
+        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.24);
+      }
+      .qr-frame svg {
+        display: block;
+        width: 112px;
+        height: 112px;
+      }
+      .qr-caption {
+        margin-top: 6px;
+        color: rgba(255, 255, 255, 0.82);
+        font-size: 11px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
       @media print {
         body { background: #fff; }
         .sheet { width: 100vw; box-shadow: none; border-color: rgba(255, 255, 255, 0.35); }
@@ -126,13 +178,19 @@ export const buildCertificateHtml = (certificate: StudentCertificateRecord): str
       </section>
 
       <section class="footer">
-        <div>
+        <div class="footer-block">
           <span class="label">Student Wallet</span>
           <span class="hash">${escapeHtml(certificate.studentWalletAddress)}</span>
         </div>
-        <div class="verify">
+        <div class="footer-block">
           <span class="label">Verify</span>
-          ${escapeHtml(verificationUrl)}
+          <span class="verify-url">${escapeHtml(verificationUrl)}</span>
+        </div>
+        <div class="qr-block">
+          <div class="qr-frame" aria-label="Verification QR code">
+            ${verificationQrSvg}
+          </div>
+          <div class="qr-caption">Scan to verify</div>
         </div>
       </section>
     </main>

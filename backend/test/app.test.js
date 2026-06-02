@@ -6,6 +6,19 @@ const request = require("supertest");
 const { createApp } = require("../app");
 const { getLinkedEthereumWalletAddresses } = require("../privy");
 
+const toDateInputValue = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const getTomorrowDateInputValue = () => {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return toDateInputValue(tomorrow);
+};
+
 test("Privy wallet extraction accepts linked Ethereum and smart wallets", () => {
   const addresses = getLinkedEthereumWalletAddresses({
     linked_accounts: [
@@ -778,6 +791,33 @@ test("issue endpoint rejects invalid wallet address before issuing", async () =>
 
   assert.equal(issueResponse.status, 400);
   assert.equal(issueResponse.body.message, "Invalid student wallet address");
+  assert.equal(issueCalls, 0);
+});
+
+test("issue endpoint rejects future issue dates before issuing", async () => {
+  const userModel = await createAdminModel();
+
+  let issueCalls = 0;
+  const issueCertificate = async () => {
+    issueCalls += 1;
+    return { txHash: "0xissued" };
+  };
+
+  const { app } = createTestApp({ userModel, issueCertificate });
+  const agent = request.agent(app);
+
+  await loginAdmin(agent);
+
+  const issueResponse = await agent.post("/api/certificates/issue").send({
+    studentName: "Recipient",
+    studentEmail: "recipient@rub.edu.bt",
+    studentWalletAddress: "0x8ba1f109551bD432803012645Ac136ddd64DBA72",
+    certificateType: "Bachelor of Science",
+    issueDate: getTomorrowDateInputValue(),
+  });
+
+  assert.equal(issueResponse.status, 400);
+  assert.equal(issueResponse.body.message, "Issue date cannot be in the future");
   assert.equal(issueCalls, 0);
 });
 
