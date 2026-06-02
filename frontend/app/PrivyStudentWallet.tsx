@@ -213,6 +213,15 @@ export function PrivyStudentWalletActions({
     normalizedWalletAddress,
   ]);
 
+  if (verifiedWalletAddress) {
+    return (
+      <Button variant="outline" className="gap-2" onClick={onCopyWallet}>
+        <Copy className="h-4 w-4" />
+        Copy Address
+      </Button>
+    );
+  }
+
   if (isLoading) {
     return (
       <Button disabled className={`gap-2 ${primaryActionClass}`}>
