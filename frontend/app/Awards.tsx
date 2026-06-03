@@ -7,7 +7,6 @@ import { Badge } from "./ui/badge";
 import {
   getAllCertificates,
   getReadableError,
-  revokeCertificate,
   StudentCertificateRecord,
 } from "../lib/certificateRegistry";
 import {
@@ -25,13 +24,14 @@ import {
   subtlePanelClass,
 } from "./ui/app-primitives";
 import { cn } from "./ui/utils";
+import { RevokeCertificateDialog } from "./RevokeCertificateDialog";
 
 export function Awards() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState<"all" | "issued" | "revoked">("all");
   const [awards, setAwards] = useState<StudentCertificateRecord[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [revokingCertificateId, setRevokingCertificateId] = useState("");
+  const [awardToRevoke, setAwardToRevoke] = useState<StudentCertificateRecord | null>(null);
 
   const loadAwards = async () => {
     setIsLoading(true);
@@ -87,29 +87,12 @@ export function Awards() {
     }
   };
 
-  const handleRevoke = async (award: StudentCertificateRecord) => {
-    const reason = window.prompt(
-      `Reason for revoking ${award.certificateId}`,
-      "Revoked by admin",
+  const handleRevoked = (revokedCertificate: StudentCertificateRecord) => {
+    setAwards((current) =>
+      current.map((item) =>
+        item.certificateId === revokedCertificate.certificateId ? revokedCertificate : item,
+      ),
     );
-    if (reason === null) {
-      return;
-    }
-
-    setRevokingCertificateId(award.certificateId);
-    try {
-      const revokedCertificate = await revokeCertificate(award.certificateId, reason);
-      setAwards((current) =>
-        current.map((item) =>
-          item.certificateId === revokedCertificate.certificateId ? revokedCertificate : item,
-        ),
-      );
-      toast.success(`Certificate ${award.certificateId} revoked`);
-    } catch (error) {
-      toast.error(getReadableError(error));
-    } finally {
-      setRevokingCertificateId("");
-    }
   };
 
   return (
@@ -249,8 +232,8 @@ export function Awards() {
                         size="sm"
                         className="gap-2 text-red-600 hover:text-red-700"
                         title="Revoke certificate"
-                        disabled={award.revoked || revokingCertificateId === award.certificateId}
-                        onClick={() => void handleRevoke(award)}
+                        disabled={award.revoked}
+                        onClick={() => setAwardToRevoke(award)}
                       >
                         <Ban className="w-4 h-4" />
                       </Button>
@@ -262,6 +245,12 @@ export function Awards() {
           </table>
         </div>
       </Card>
+
+      <RevokeCertificateDialog
+        certificate={awardToRevoke}
+        onClose={() => setAwardToRevoke(null)}
+        onRevoked={handleRevoked}
+      />
     </div>
   );
 }

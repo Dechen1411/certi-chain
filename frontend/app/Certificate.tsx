@@ -7,7 +7,6 @@ import { Link } from "react-router";
 import {
   getAllCertificates,
   getReadableError,
-  revokeCertificate,
   StudentCertificateRecord,
 } from "../lib/certificateRegistry";
 import {
@@ -24,12 +23,13 @@ import {
   subtlePanelClass,
 } from "./ui/app-primitives";
 import { cn } from "./ui/utils";
+import { RevokeCertificateDialog } from "./RevokeCertificateDialog";
 
 export function Certificates() {
   const [searchTerm, setSearchTerm] = useState("");
   const [certificates, setCertificates] = useState<StudentCertificateRecord[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [revokingCertificateId, setRevokingCertificateId] = useState("");
+  const [certificateToRevoke, setCertificateToRevoke] = useState<StudentCertificateRecord | null>(null);
 
   const loadCertificates = async () => {
     setIsLoading(true);
@@ -61,29 +61,12 @@ export function Certificates() {
     }
   };
 
-  const handleRevoke = async (certificate: StudentCertificateRecord) => {
-    const reason = window.prompt(
-      `Reason for revoking ${certificate.certificateId}`,
-      "Revoked by admin",
+  const handleRevoked = (revokedCertificate: StudentCertificateRecord) => {
+    setCertificates((current) =>
+      current.map((item) =>
+        item.certificateId === revokedCertificate.certificateId ? revokedCertificate : item,
+      ),
     );
-    if (reason === null) {
-      return;
-    }
-
-    setRevokingCertificateId(certificate.certificateId);
-    try {
-      const revokedCertificate = await revokeCertificate(certificate.certificateId, reason);
-      setCertificates((current) =>
-        current.map((item) =>
-          item.certificateId === revokedCertificate.certificateId ? revokedCertificate : item,
-        ),
-      );
-      toast.success(`Certificate ${certificate.certificateId} revoked`);
-    } catch (error) {
-      toast.error(getReadableError(error));
-    } finally {
-      setRevokingCertificateId("");
-    }
   };
 
   return (
@@ -168,8 +151,8 @@ export function Certificates() {
                   variant="outline"
                   size="sm"
                   className="gap-2 text-red-600 hover:text-red-700"
-                  disabled={certificate.revoked || revokingCertificateId === certificate.certificateId}
-                  onClick={() => void handleRevoke(certificate)}
+                  disabled={certificate.revoked}
+                  onClick={() => setCertificateToRevoke(certificate)}
                 >
                   <Ban className="w-4 h-4" />
                   Revoke
@@ -179,6 +162,12 @@ export function Certificates() {
           </Card>
         ))}
       </div>
+
+      <RevokeCertificateDialog
+        certificate={certificateToRevoke}
+        onClose={() => setCertificateToRevoke(null)}
+        onRevoked={handleRevoked}
+      />
     </div>
   );
 }
