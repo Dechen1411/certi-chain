@@ -88,7 +88,7 @@ export function StudentCertificates() {
                 !isPrivyConfigured
                   ? "Wallet connection is temporarily unavailable. Please contact the administrator."
                   : !walletAddress
-                  ? "Verify your wallet from the dashboard to view your certificates."
+                  ? "Open your dashboard so CertiChain can prepare your wallet."
                   : isLoading
                   ? "Loading your certificate records."
                   : "Certificates issued to your wallet will appear here."

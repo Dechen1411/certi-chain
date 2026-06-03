@@ -47,8 +47,8 @@ const architectureSteps = [
     tone: "purple" as const,
   },
   {
-    title: "Wallet ownership",
-    description: "Students verify their wallet before certificates appear in their account.",
+    title: "Wallet linking",
+    description: "Students save a wallet before certificates appear in their account.",
     icon: Wallet,
     tone: "green" as const,
   },
@@ -78,7 +78,7 @@ export function PublicDashboard() {
               Digital Certificate Awarding System
             </p>
             <p className="max-w-xl text-base leading-7 text-gray-600 sm:text-lg">
-              Issue academic certificates, assign them to verified student wallets,
+              Issue academic certificates, assign them to saved student wallets,
               and let employers confirm authenticity by ID or QR code.
             </p>
           </div>
@@ -252,7 +252,7 @@ export function PublicDashboard() {
               </div>
               <h2 className="text-3xl font-semibold tracking-normal text-gray-950">Secure by design</h2>
               <p className="mt-3 max-w-xl text-sm leading-6 text-gray-600">
-                Admin issuance is protected, wallet ownership is verified, records
+                Admin issuance is protected, student wallets are linked, records
                 are stored safely, and certificate proofs can be checked publicly.
               </p>
             </div>

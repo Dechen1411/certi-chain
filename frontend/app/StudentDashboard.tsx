@@ -136,7 +136,7 @@ export function StudentDashboard() {
 
             {verifiedWalletAddress && (
               <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
-                Wallet verified and ready to receive certificates.
+                Wallet saved and ready to receive certificates.
               </div>
             )}
 

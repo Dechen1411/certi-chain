@@ -62,20 +62,20 @@ export function PrivyStudentWalletActions({
   userEmail?: string;
   verifiedWalletAddress?: string;
 }) {
-  const { getAccessToken, login } = usePrivy();
+  const { login } = usePrivy();
   const { createWallet } = useCreateWallet();
   const [isCreatingWallet, setIsCreatingWallet] = useState(false);
-  const [isVerifyingWallet, setIsVerifyingWallet] = useState(false);
+  const [isSavingWallet, setIsSavingWallet] = useState(false);
   const autoLoginAttemptedRef = useRef(false);
   const autoCreateAttemptedRef = useRef(false);
-  const autoVerifyWalletRef = useRef("");
-  const verificationInFlightRef = useRef(false);
+  const autoSaveWalletRef = useRef("");
+  const saveInFlightRef = useRef(false);
   const { authenticated, ready, wallet, walletAddress, walletsReady } =
     useSyncedPrivyWalletAddress(onWalletAddressChange);
   const isLoading = !ready || !walletsReady;
   const normalizedWalletAddress = walletAddress.toLowerCase();
   const normalizedVerifiedWalletAddress = verifiedWalletAddress.toLowerCase();
-  const needsServerVerification =
+  const needsServerSave =
     Boolean(normalizedWalletAddress) &&
     normalizedWalletAddress !== normalizedVerifiedWalletAddress;
   const getLoginOptions = useCallback((loginMethods: WalletLoginMethod[]) => ({
@@ -83,17 +83,17 @@ export function PrivyStudentWalletActions({
     ...(userEmail ? { prefill: { type: "email" as const, value: userEmail } } : {}),
   }), [userEmail]);
 
-  const handleVerifyWallet = useCallback(async (showSuccessToast = true) => {
+  const handleSaveWallet = useCallback(async (showSuccessToast = true) => {
     if (!walletAddress) {
       return;
     }
 
-    if (verificationInFlightRef.current) {
+    if (saveInFlightRef.current) {
       return;
     }
 
-    verificationInFlightRef.current = true;
-    setIsVerifyingWallet(true);
+    saveInFlightRef.current = true;
+    setIsSavingWallet(true);
     try {
       if (!wallet) {
         throw new Error("Connect a wallet first.");
@@ -103,26 +103,21 @@ export function PrivyStudentWalletActions({
         await wallet.loginOrLink();
       }
 
-      const accessToken = await getAccessToken();
-      if (!accessToken) {
-        throw new Error("Wallet session is not ready. Sign in again.");
-      }
-
-      const updatedUser = await bindStudentWallet(walletAddress, accessToken);
+      const updatedUser = await bindStudentWallet(walletAddress);
       await onWalletVerified(updatedUser);
 
       if (showSuccessToast || walletAddress.toLowerCase() !== verifiedWalletAddress.toLowerCase()) {
-        toast.success("Wallet verified and saved");
+        toast.success("Wallet saved to your account");
       }
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "Unable to verify wallet";
+        error instanceof Error ? error.message : "Unable to save wallet";
       toast.error(message);
     } finally {
-      verificationInFlightRef.current = false;
-      setIsVerifyingWallet(false);
+      saveInFlightRef.current = false;
+      setIsSavingWallet(false);
     }
-  }, [getAccessToken, onWalletVerified, verifiedWalletAddress, wallet, walletAddress]);
+  }, [onWalletVerified, verifiedWalletAddress, wallet, walletAddress]);
 
   const handleCreateWallet = async () => {
     setIsCreatingWallet(true);
@@ -195,21 +190,21 @@ export function PrivyStudentWalletActions({
     if (
       !autoSetup ||
       isLoading ||
-      !needsServerVerification ||
-      isVerifyingWallet ||
-      autoVerifyWalletRef.current === normalizedWalletAddress
+      !needsServerSave ||
+      isSavingWallet ||
+      autoSaveWalletRef.current === normalizedWalletAddress
     ) {
       return;
     }
 
-    autoVerifyWalletRef.current = normalizedWalletAddress;
-    void handleVerifyWallet(false);
+    autoSaveWalletRef.current = normalizedWalletAddress;
+    void handleSaveWallet(false);
   }, [
     autoSetup,
-    handleVerifyWallet,
+    handleSaveWallet,
     isLoading,
-    isVerifyingWallet,
-    needsServerVerification,
+    isSavingWallet,
+    needsServerSave,
     normalizedWalletAddress,
   ]);
 
@@ -280,14 +275,26 @@ export function PrivyStudentWalletActions({
     );
   }
 
-  if (needsServerVerification) {
+  if (needsServerSave) {
     return (
-      <>
+      <div className="flex w-full flex-col gap-2 sm:w-auto">
+        <Button
+          onClick={() => void handleSaveWallet(true)}
+          disabled={isSavingWallet}
+          className={`gap-2 ${primaryActionClass}`}
+        >
+          {isSavingWallet ? (
+            <RefreshCcw className="h-4 w-4 animate-spin" />
+          ) : (
+            <Wallet className="h-4 w-4" />
+          )}
+          {isSavingWallet ? "Saving Wallet" : "Save Wallet"}
+        </Button>
         <Button variant="outline" className="gap-2" onClick={onCopyWallet}>
           <Copy className="h-4 w-4" />
           Copy Address
         </Button>
-      </>
+      </div>
     );
   }
 

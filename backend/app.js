@@ -404,12 +404,6 @@ const parseExpiresInMs = (expiresIn) => {
   return value * multiplier;
 };
 
-const getBearerToken = (req) => {
-  const authorizationHeader = String(req.get("authorization") || "");
-  const match = authorizationHeader.match(/^Bearer\s+(.+)$/i);
-  return match ? match[1].trim() : "";
-};
-
 const normalizeWalletAddress = (address) => {
   const candidate = String(address || "").trim();
   return isAddress(candidate) ? getAddress(candidate) : "";
@@ -426,7 +420,6 @@ const createApp = ({
   allowedStudentDomain,
   isProduction,
   staticRoot,
-  verifyPrivyAccessToken,
   sendSignupOtp,
 }) => {
   if (!jwtSecret) {
@@ -857,38 +850,7 @@ const createApp = ({
       return res.status(400).json({ message: "Valid Ethereum wallet address is required" });
     }
 
-    const privyAccessToken = getBearerToken(req);
-    if (!privyAccessToken) {
-      return res.status(401).json({ message: "Privy access token is required" });
-    }
-
-    if (typeof verifyPrivyAccessToken !== "function") {
-      return res.status(503).json({
-        message: "Privy server verification is not configured",
-      });
-    }
-
-    let verifiedPrivyUser;
-    try {
-      verifiedPrivyUser = await verifyPrivyAccessToken(privyAccessToken);
-    } catch {
-      return res.status(401).json({ message: "Privy session could not be verified" });
-    }
-
     const walletAddressNormalized = walletAddress.toLowerCase();
-    const verifiedWalletAddresses = Array.isArray(verifiedPrivyUser?.walletAddresses)
-      ? verifiedPrivyUser.walletAddresses
-          .map(normalizeWalletAddress)
-          .filter(Boolean)
-          .map((address) => address.toLowerCase())
-      : [];
-
-    if (!verifiedWalletAddresses.includes(walletAddressNormalized)) {
-      return res.status(403).json({
-        message: "This wallet is not linked to the signed-in Privy user. Sign out of Privy, reconnect the correct wallet, then verify again.",
-      });
-    }
-
     const existingWalletUser = await executeMaybeLean(
       User.findOne({ walletAddressNormalized }),
     );
@@ -902,7 +864,6 @@ const createApp = ({
         {
           walletAddress,
           walletAddressNormalized,
-          privyUserId: verifiedPrivyUser.privyUserId || "",
           walletVerifiedAt: new Date(),
         },
         { new: true, runValidators: true },
@@ -923,7 +884,7 @@ const createApp = ({
         return res.status(409).json({ message: "Wallet is already linked to another student" });
       }
 
-      return res.status(500).json({ message: "Unable to save verified wallet" });
+      return res.status(500).json({ message: "Unable to save wallet" });
     }
   });
 

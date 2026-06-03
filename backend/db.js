@@ -10,7 +10,6 @@ const userSchema = new mongoose.Schema(
     name: { type: String, required: true },
     walletAddress: { type: String, default: "" },
     walletAddressNormalized: { type: String, default: "", index: true },
-    privyUserId: { type: String, default: "" },
     walletVerifiedAt: { type: Date },
   },
   {

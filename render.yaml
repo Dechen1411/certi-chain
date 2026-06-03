@@ -47,10 +47,6 @@ services:
         value: "10"
       - key: VITE_PRIVY_APP_ID
         sync: false
-      - key: PRIVY_APP_ID
-        sync: false
-      - key: PRIVY_APP_SECRET
-        sync: false
       - key: EMAIL_API_PROVIDER
         value: brevo
       - key: EMAIL_API_KEY

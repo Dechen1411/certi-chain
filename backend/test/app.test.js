@@ -4,7 +4,6 @@ const bcrypt = require("bcryptjs");
 const request = require("supertest");
 
 const { createApp } = require("../app");
-const { getLinkedEthereumWalletAddresses } = require("../privy");
 
 const toDateInputValue = (date) => {
   const year = date.getFullYear();
@@ -18,32 +17,6 @@ const getTomorrowDateInputValue = () => {
   tomorrow.setDate(tomorrow.getDate() + 1);
   return toDateInputValue(tomorrow);
 };
-
-test("Privy wallet extraction accepts linked Ethereum and smart wallets", () => {
-  const addresses = getLinkedEthereumWalletAddresses({
-    linked_accounts: [
-      {
-        type: "wallet",
-        chain_type: "ethereum",
-        address: "0x8ba1f109551bD432803012645Ac136ddd64DBA72",
-      },
-      {
-        type: "smart_wallet",
-        address: "0x1111111111111111111111111111111111111111",
-      },
-      {
-        type: "wallet",
-        chain_type: "solana",
-        address: "11111111111111111111111111111111",
-      },
-    ],
-  });
-
-  assert.deepEqual(addresses, [
-    "0x8ba1f109551bD432803012645Ac136ddd64DBA72",
-    "0x1111111111111111111111111111111111111111",
-  ]);
-});
 
 const createFakeUserModel = (initialUsers = []) => {
   const users = [...initialUsers];
@@ -230,7 +203,6 @@ const createTestApp = (overrides = {}) => {
     jwtExpiresIn: "12h",
     allowedStudentDomain: "@rub.edu.bt",
     isProduction: false,
-    verifyPrivyAccessToken: overrides.verifyPrivyAccessToken,
   });
 
   return { app, certificateModel, templateModel, userModel };
@@ -476,7 +448,7 @@ test("student session cannot issue certificates", async () => {
   assert.equal(issueResponse.status, 403);
 });
 
-test("student can bind a Privy-verified wallet", async () => {
+test("student can save a connected wallet without a Privy access token", async () => {
   const studentHash = await bcrypt.hash("StudentPass123!", 12);
   const walletAddress = "0x8ba1f109551bD432803012645Ac136ddd64DBA72";
   const userModel = createFakeUserModel([
@@ -490,15 +462,7 @@ test("student can bind a Privy-verified wallet", async () => {
     },
   ]);
 
-  const verifyPrivyAccessToken = async (token) => {
-    assert.equal(token, "privy-token");
-    return {
-      privyUserId: "did:privy:student-1",
-      walletAddresses: [walletAddress.toLowerCase()],
-    };
-  };
-
-  const { app, userModel: model } = createTestApp({ userModel, verifyPrivyAccessToken });
+  const { app, userModel: model } = createTestApp({ userModel });
   const agent = request.agent(app);
 
   const loginResponse = await agent.post("/api/auth/login").send({
@@ -510,7 +474,6 @@ test("student can bind a Privy-verified wallet", async () => {
 
   const response = await agent
     .post("/api/student/wallet/bind")
-    .set("Authorization", "Bearer privy-token")
     .send({ walletAddress: walletAddress.toLowerCase() });
 
   assert.equal(response.status, 200);
@@ -518,10 +481,9 @@ test("student can bind a Privy-verified wallet", async () => {
   assert.ok(response.body.user.walletVerifiedAt);
   assert.equal(model._users[0].walletAddress, walletAddress);
   assert.equal(model._users[0].walletAddressNormalized, walletAddress.toLowerCase());
-  assert.equal(model._users[0].privyUserId, "did:privy:student-1");
 });
 
-test("wallet binding rejects wallets not linked to the Privy session", async () => {
+test("wallet binding rejects invalid wallet addresses", async () => {
   const studentHash = await bcrypt.hash("StudentPass123!", 12);
   const userModel = createFakeUserModel([
     {
@@ -534,13 +496,7 @@ test("wallet binding rejects wallets not linked to the Privy session", async () 
     },
   ]);
 
-  const { app, userModel: model } = createTestApp({
-    userModel,
-    verifyPrivyAccessToken: async () => ({
-      privyUserId: "did:privy:student-1",
-      walletAddresses: ["0x8ba1f109551bD432803012645Ac136ddd64DBA72"],
-    }),
-  });
+  const { app, userModel: model } = createTestApp({ userModel });
   const agent = request.agent(app);
 
   await agent.post("/api/auth/login").send({
@@ -550,11 +506,10 @@ test("wallet binding rejects wallets not linked to the Privy session", async () 
 
   const response = await agent
     .post("/api/student/wallet/bind")
-    .set("Authorization", "Bearer privy-token")
-    .send({ walletAddress: "0x1111111111111111111111111111111111111111" });
+    .send({ walletAddress: "not-a-wallet" });
 
-  assert.equal(response.status, 403);
-  assert.match(response.body.message, /not linked to the signed-in Privy user/);
+  assert.equal(response.status, 400);
+  assert.equal(response.body.message, "Valid Ethereum wallet address is required");
   assert.equal(model._users[0].walletAddress, undefined);
 });
 
@@ -579,18 +534,11 @@ test("wallet binding prevents one wallet from being linked to two students", asy
       name: "Linked Student",
       walletAddress,
       walletAddressNormalized: walletAddress.toLowerCase(),
-      privyUserId: "did:privy:student-2",
       walletVerifiedAt: new Date(),
     },
   ]);
 
-  const { app } = createTestApp({
-    userModel,
-    verifyPrivyAccessToken: async () => ({
-      privyUserId: "did:privy:student-1",
-      walletAddresses: [walletAddress],
-    }),
-  });
+  const { app } = createTestApp({ userModel });
   const agent = request.agent(app);
 
   await agent.post("/api/auth/login").send({
@@ -600,7 +548,6 @@ test("wallet binding prevents one wallet from being linked to two students", asy
 
   const response = await agent
     .post("/api/student/wallet/bind")
-    .set("Authorization", "Bearer privy-token")
     .send({ walletAddress });
 
   assert.equal(response.status, 409);
@@ -648,7 +595,7 @@ test("admin session can issue certificates", async () => {
   assert.equal(certificateModel._certificates[0].studentWalletAddressNormalized, "0x8ba1f109551bd432803012645ac136ddd64dba72");
 });
 
-test("admin can issue certificates using the student's verified wallet email", async () => {
+test("admin can issue certificates using the student's saved wallet email", async () => {
   const walletAddress = "0x8ba1f109551bD432803012645Ac136ddd64DBA72";
   const userModel = await createAdminModel();
   userModel._users.push({
@@ -722,7 +669,7 @@ test("admin can list issued certificates from MongoDB", async () => {
   assert.equal(statsResponse.body.activeCertificates, 1);
 });
 
-test("student can list certificates for their verified wallet", async () => {
+test("student can list certificates for their saved wallet", async () => {
   const studentHash = await bcrypt.hash("StudentPass123!", 12);
   const walletAddress = "0x8ba1f109551bD432803012645Ac136ddd64DBA72";
   const userModel = createFakeUserModel([

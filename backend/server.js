@@ -7,7 +7,6 @@ const { createApp } = require("./app");
 const { issueCertificateOnChain } = require("./blockchainIssuer");
 const { Certificate, CertificateTemplate, User, connectDb } = require("./db");
 const { createSignupOtpSender } = require("./emailOtp");
-const { createPrivyAccessTokenVerifier } = require("./privy");
 
 const PORT = Number(process.env.PORT || 4000);
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || process.env.RENDER_EXTERNAL_URL || "http://localhost:5173";
@@ -18,10 +17,6 @@ const MONGODB_URI = process.env.MONGODB_URI || "";
 const CHAIN_RPC_URL = process.env.CHAIN_RPC_URL || "";
 const CERTIFICATE_REGISTRY_ADDRESS = process.env.CERTIFICATE_REGISTRY_ADDRESS || "";
 const ISSUER_PRIVATE_KEY = process.env.ISSUER_PRIVATE_KEY || "";
-const PRIVY_APP_ID = process.env.PRIVY_APP_ID || process.env.VITE_PRIVY_APP_ID || "";
-const PRIVY_APP_SECRET = process.env.PRIVY_APP_SECRET || "";
-const PRIVY_API_URL = process.env.PRIVY_API_URL || "";
-const PRIVY_JWT_VERIFICATION_KEY = process.env.PRIVY_JWT_VERIFICATION_KEY || "";
 const BREVO_API_KEY = process.env.BREVO_API_KEY || "";
 const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
 const EMAIL_API_PROVIDER = process.env.EMAIL_API_PROVIDER || (BREVO_API_KEY ? "brevo" : RESEND_API_KEY ? "resend" : "");
@@ -92,12 +87,6 @@ const app = createApp({
   allowedStudentDomain: ALLOWED_STUDENT_DOMAIN,
   isProduction: process.env.NODE_ENV === "production",
   staticRoot,
-  verifyPrivyAccessToken: createPrivyAccessTokenVerifier({
-    appId: PRIVY_APP_ID,
-    appSecret: PRIVY_APP_SECRET,
-    apiUrl: PRIVY_API_URL,
-    jwtVerificationKey: PRIVY_JWT_VERIFICATION_KEY,
-  }),
   sendSignupOtp: createSignupOtpSender({
     appName: "CertiChain",
     emailApiProvider: EMAIL_API_PROVIDER,
