@@ -1,4 +1,4 @@
-import { Download, Eye, Search, Filter, Calendar, User, FileText, RefreshCcw } from "lucide-react";
+import { Ban, Download, Eye, Search, Filter, Calendar, User, FileText, RefreshCcw } from "lucide-react";
 import { Card } from "./ui/card";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -7,6 +7,7 @@ import { Badge } from "./ui/badge";
 import {
   getAllCertificates,
   getReadableError,
+  revokeCertificate,
   StudentCertificateRecord,
 } from "../lib/certificateRegistry";
 import {
@@ -30,6 +31,7 @@ export function Awards() {
   const [filterStatus, setFilterStatus] = useState<"all" | "issued" | "revoked">("all");
   const [awards, setAwards] = useState<StudentCertificateRecord[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [revokingCertificateId, setRevokingCertificateId] = useState("");
 
   const loadAwards = async () => {
     setIsLoading(true);
@@ -82,6 +84,31 @@ export function Awards() {
       openCertificatePrintView(award);
     } catch (error) {
       toast.error(getReadableError(error));
+    }
+  };
+
+  const handleRevoke = async (award: StudentCertificateRecord) => {
+    const reason = window.prompt(
+      `Reason for revoking ${award.certificateId}`,
+      "Revoked by admin",
+    );
+    if (reason === null) {
+      return;
+    }
+
+    setRevokingCertificateId(award.certificateId);
+    try {
+      const revokedCertificate = await revokeCertificate(award.certificateId, reason);
+      setAwards((current) =>
+        current.map((item) =>
+          item.certificateId === revokedCertificate.certificateId ? revokedCertificate : item,
+        ),
+      );
+      toast.success(`Certificate ${award.certificateId} revoked`);
+    } catch (error) {
+      toast.error(getReadableError(error));
+    } finally {
+      setRevokingCertificateId("");
     }
   };
 
@@ -216,6 +243,16 @@ export function Awards() {
                       </Button>
                       <Button variant="ghost" size="sm" className="gap-2" onClick={() => downloadCertificateHtml(award)}>
                         <Download className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="gap-2 text-red-600 hover:text-red-700"
+                        title="Revoke certificate"
+                        disabled={award.revoked || revokingCertificateId === award.certificateId}
+                        onClick={() => void handleRevoke(award)}
+                      >
+                        <Ban className="w-4 h-4" />
                       </Button>
                     </div>
                   </td>

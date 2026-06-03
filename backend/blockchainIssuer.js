@@ -9,6 +9,7 @@ const {
 
 const registryAbi = [
   "function issueCertificate(address student, bytes32 certificateHash, string certificateURI) external returns (uint256)",
+  "function revokeCertificate(uint256 tokenId, string calldata reason) external",
   "event CertificateIssued(uint256 indexed tokenId, address indexed student, bytes32 indexed certificateHash, string tokenURI)",
 ];
 
@@ -70,6 +71,38 @@ const issueCertificateOnChain = async (certificate, config) => {
   };
 };
 
+const revokeCertificateOnChain = async ({ tokenId, reason }, config) => {
+  const rpcUrl = config.chainRpcUrl;
+  const contractAddress = config.certificateRegistryAddress;
+  const issuerPrivateKey = config.issuerPrivateKey;
+
+  if (!rpcUrl || !contractAddress || !issuerPrivateKey) {
+    throw new Error("Missing blockchain issuer environment variables");
+  }
+
+  const tokenIdInput = String(tokenId || "").trim();
+  if (!/^\d+$/.test(tokenIdInput)) {
+    throw new Error("Invalid certificate token ID");
+  }
+
+  const parsedTokenId = BigInt(tokenIdInput);
+  if (parsedTokenId <= 0n) {
+    throw new Error("Invalid certificate token ID");
+  }
+
+  const provider = new JsonRpcProvider(rpcUrl);
+  const signer = new Wallet(issuerPrivateKey, provider);
+  const contract = new Contract(contractAddress, registryAbi, signer);
+
+  const tx = await contract.revokeCertificate(parsedTokenId, String(reason || "Revoked by admin"));
+  await tx.wait();
+
+  return {
+    txHash: tx.hash,
+  };
+};
+
 module.exports = {
   issueCertificateOnChain,
+  revokeCertificateOnChain,
 };

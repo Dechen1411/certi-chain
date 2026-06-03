@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Award, Download, Eye, Plus, RefreshCcw, Search } from "lucide-react";
+import { Award, Ban, Download, Eye, Plus, RefreshCcw, Search } from "lucide-react";
 import { Card } from "./ui/card";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -7,6 +7,7 @@ import { Link } from "react-router";
 import {
   getAllCertificates,
   getReadableError,
+  revokeCertificate,
   StudentCertificateRecord,
 } from "../lib/certificateRegistry";
 import {
@@ -28,6 +29,7 @@ export function Certificates() {
   const [searchTerm, setSearchTerm] = useState("");
   const [certificates, setCertificates] = useState<StudentCertificateRecord[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [revokingCertificateId, setRevokingCertificateId] = useState("");
 
   const loadCertificates = async () => {
     setIsLoading(true);
@@ -56,6 +58,31 @@ export function Certificates() {
       openCertificatePrintView(certificate);
     } catch (error) {
       toast.error(getReadableError(error));
+    }
+  };
+
+  const handleRevoke = async (certificate: StudentCertificateRecord) => {
+    const reason = window.prompt(
+      `Reason for revoking ${certificate.certificateId}`,
+      "Revoked by admin",
+    );
+    if (reason === null) {
+      return;
+    }
+
+    setRevokingCertificateId(certificate.certificateId);
+    try {
+      const revokedCertificate = await revokeCertificate(certificate.certificateId, reason);
+      setCertificates((current) =>
+        current.map((item) =>
+          item.certificateId === revokedCertificate.certificateId ? revokedCertificate : item,
+        ),
+      );
+      toast.success(`Certificate ${certificate.certificateId} revoked`);
+    } catch (error) {
+      toast.error(getReadableError(error));
+    } finally {
+      setRevokingCertificateId("");
     }
   };
 
@@ -136,6 +163,16 @@ export function Certificates() {
                 </Button>
                 <Button variant="outline" size="sm" className="gap-2" onClick={() => downloadCertificateHtml(certificate)}>
                   <Download className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2 text-red-600 hover:text-red-700"
+                  disabled={certificate.revoked || revokingCertificateId === certificate.certificateId}
+                  onClick={() => void handleRevoke(certificate)}
+                >
+                  <Ban className="w-4 h-4" />
+                  Revoke
                 </Button>
               </div>
             </div>

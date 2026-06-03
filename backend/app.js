@@ -17,6 +17,7 @@ const PASSWORD_RESET_OTP_MAX_ATTEMPTS = 5;
 const PASSWORD_RESET_REQUEST_MESSAGE = "If an account exists, a password reset code has been sent";
 const SIGNUP_OTP_DELIVERY_FAILURE_MESSAGE = "Could not send verification code right now. Please try again in a moment.";
 const PASSWORD_RESET_OTP_DELIVERY_FAILURE_MESSAGE = "Could not send password reset code right now. Please try again in a moment.";
+const DEFAULT_REVOCATION_REASON = "Revoked by admin";
 
 const executeMaybeLean = async (queryResult) => {
   if (!queryResult) {
@@ -143,6 +144,10 @@ const normalizeTemplateInput = (body) => ({
   color: String(body?.color || "").trim() || "from-slate-700 to-slate-900",
   uses: Number.isFinite(Number(body?.uses)) ? Math.max(0, Number(body.uses)) : undefined,
 });
+
+const normalizeRevocationReason = (value) => {
+  return String(value || "").trim().slice(0, 280) || DEFAULT_REVOCATION_REASON;
+};
 
 const normalizeSignupInput = (body) => {
   const email = String(body?.email || "").trim().toLowerCase();
@@ -436,6 +441,9 @@ const toPublicCertificate = (certificate) => {
     },
     nftHash: certificate.certificateHash || "",
     revoked: Boolean(certificate.revoked),
+    revokedAt: toIsoString(certificate.revokedAt),
+    revocationReason: certificate.revocationReason || "",
+    revokeTxHash: certificate.revokeTxHash || "",
     tokenUri: certificate.tokenUri || "",
     txHash: certificate.txHash || "",
   };
@@ -503,6 +511,7 @@ const createApp = ({
   isProduction,
   staticRoot,
   sendSignupOtp,
+  revokeCertificate,
 }) => {
   if (!jwtSecret) {
     throw new Error("Missing JWT_SECRET in backend environment");
@@ -516,6 +525,9 @@ const createApp = ({
   const deliverSignupOtp = typeof sendSignupOtp === "function"
     ? sendSignupOtp
     : async ({ otp }) => ({ delivered: false, previewOtp: otp });
+  const revokeCertificateOnChain = typeof revokeCertificate === "function"
+    ? revokeCertificate
+    : async () => ({ txHash: "" });
 
   const assignStudentWalletFields = (email) => createStudentWalletFields(email, jwtSecret);
 
@@ -1144,6 +1156,25 @@ const createApp = ({
     });
   };
 
+  const findCertificateById = async (certificateId) => {
+    if (typeof Certificate.findOne !== "function") {
+      const certificates = await executeMaybeLean(Certificate.find({ certificateId }));
+      return certificates?.[0] || null;
+    }
+
+    return executeMaybeLean(Certificate.findOne({ certificateId }));
+  };
+
+  const updateCertificateById = async (certificateId, update) => {
+    const query = Certificate.findOneAndUpdate(
+      { certificateId },
+      update,
+      { new: true, runValidators: true },
+    );
+
+    return executeMaybeLean(query);
+  };
+
   app.post("/api/certificates/issue", authenticate, requireRole("admin"), async (req, res) => {
     let certificateInput = normalizeCertificateInput(req.body);
 
@@ -1184,6 +1215,55 @@ const createApp = ({
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to issue certificate";
+      return res.status(500).json({ message });
+    }
+  });
+
+  app.post("/api/certificates/:certificateId/revoke", authenticate, requireRole("admin"), async (req, res) => {
+    const certificateId = String(req.params.certificateId || "").trim().toUpperCase();
+    const reason = normalizeRevocationReason(req.body?.reason);
+
+    if (!certificateId) {
+      return res.status(400).json({ message: "Certificate ID is required" });
+    }
+
+    const certificate = await findCertificateById(certificateId);
+    if (!certificate) {
+      return res.status(404).json({ message: "Certificate not found" });
+    }
+
+    if (certificate.revoked) {
+      return res.status(409).json({ message: "Certificate is already revoked" });
+    }
+
+    const tokenId = String(certificate.tokenId || "").trim();
+    if (!tokenId) {
+      return res.status(409).json({ message: "Certificate token ID is missing" });
+    }
+
+    try {
+      const revoked = await revokeCertificateOnChain({ tokenId, reason });
+      const updatedCertificate = await updateCertificateById(certificateId, {
+        revoked: true,
+        revokedAt: new Date(),
+        revokedBy: req.auth.sub,
+        revocationReason: reason,
+        revokeTxHash: revoked.txHash || "",
+      });
+
+      return res.json({
+        certificate: toPublicCertificate(updatedCertificate || {
+          ...certificate,
+          revoked: true,
+          revokedAt: new Date(),
+          revokedBy: req.auth.sub,
+          revocationReason: reason,
+          revokeTxHash: revoked.txHash || "",
+        }),
+        txHash: revoked.txHash || "",
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to revoke certificate";
       return res.status(500).json({ message });
     }
   });

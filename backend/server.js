@@ -4,7 +4,7 @@ const bcrypt = require("bcryptjs");
 const fs = require("fs");
 const path = require("path");
 const { createApp } = require("./app");
-const { issueCertificateOnChain } = require("./blockchainIssuer");
+const { issueCertificateOnChain, revokeCertificateOnChain } = require("./blockchainIssuer");
 const { Certificate, CertificateTemplate, User, connectDb } = require("./db");
 const { createSignupOtpSender } = require("./emailOtp");
 
@@ -77,6 +77,11 @@ const app = createApp({
   CertificateTemplate,
   User,
   issueCertificate: (certificate) => issueCertificateOnChain(certificate, {
+    chainRpcUrl: CHAIN_RPC_URL,
+    certificateRegistryAddress: CERTIFICATE_REGISTRY_ADDRESS,
+    issuerPrivateKey: ISSUER_PRIVATE_KEY,
+  }),
+  revokeCertificate: (certificate) => revokeCertificateOnChain(certificate, {
     chainRpcUrl: CHAIN_RPC_URL,
     certificateRegistryAddress: CERTIFICATE_REGISTRY_ADDRESS,
     issuerPrivateKey: ISSUER_PRIVATE_KEY,

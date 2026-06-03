@@ -204,10 +204,28 @@ const createFakeCertificateModel = (initialCertificates = []) => {
   };
 
   const find = (query = {}) => createQuery(certificates.filter((certificate) => matchesQuery(certificate, query)));
+  const findOne = (query = {}) => createQuery(certificates.find((certificate) => matchesQuery(certificate, query)) || null);
+  const findOneAndUpdate = (query = {}, update = {}) => {
+    const certificate = certificates.find((candidate) => matchesQuery(candidate, query));
+    if (!certificate) {
+      return createQuery(null);
+    }
+
+    if (update.$set) {
+      Object.assign(certificate, update.$set);
+    }
+
+    const directUpdate = { ...update };
+    delete directUpdate.$set;
+    Object.assign(certificate, directUpdate, { updatedAt: new Date() });
+    return createQuery(certificate);
+  };
 
   return {
     create,
     find,
+    findOne,
+    findOneAndUpdate,
     _certificates: certificates,
   };
 };
@@ -217,12 +235,14 @@ const createTestApp = (overrides = {}) => {
   const templateModel = overrides.templateModel || createFakeTemplateModel();
   const certificateModel = overrides.certificateModel || createFakeCertificateModel();
   const issueCertificate = overrides.issueCertificate || (async () => ({ txHash: "0xtesthash" }));
+  const revokeCertificate = overrides.revokeCertificate || (async () => ({ txHash: "0xrevoked" }));
 
   const app = createApp({
     Certificate: certificateModel,
     CertificateTemplate: templateModel,
     User: userModel,
     issueCertificate,
+    revokeCertificate,
     frontendOrigin: "http://localhost:5173",
     jwtSecret: TEST_JWT_SECRET,
     jwtExpiresIn: "12h",
@@ -772,6 +792,88 @@ test("admin can list issued certificates from MongoDB", async () => {
   assert.equal(statsResponse.status, 200);
   assert.equal(statsResponse.body.totalCertificates, 1);
   assert.equal(statsResponse.body.activeCertificates, 1);
+});
+
+test("admin can revoke an issued certificate", async () => {
+  const userModel = await createAdminModel();
+  const certificateModel = createFakeCertificateModel([
+    {
+      certificateId: "CERT-2026-000000001",
+      txHash: "0xissued",
+      certificateHash: "0xhash",
+      tokenId: "1",
+      studentName: "Recipient",
+      studentEmail: "recipient@rub.edu.bt",
+      studentWalletAddress: "0x8ba1f109551bD432803012645Ac136ddd64DBA72",
+      studentWalletAddressNormalized: "0x8ba1f109551bd432803012645ac136ddd64dba72",
+      certificateType: "Bachelor of Science",
+      issueDate: "2026-04-21",
+      issuedAt: new Date("2026-04-21T10:00:00Z"),
+      revoked: false,
+    },
+  ]);
+  let revokedPayload = null;
+  const revokeCertificate = async (payload) => {
+    revokedPayload = payload;
+    return { txHash: "0xrevoked" };
+  };
+
+  const { app } = createTestApp({ userModel, certificateModel, revokeCertificate });
+  const agent = request.agent(app);
+
+  await loginAdmin(agent);
+
+  const revokeResponse = await agent
+    .post("/api/certificates/CERT-2026-000000001/revoke")
+    .send({ reason: "Incorrect grade" });
+
+  assert.equal(revokeResponse.status, 200);
+  assert.equal(revokeResponse.body.txHash, "0xrevoked");
+  assert.equal(revokeResponse.body.certificate.revoked, true);
+  assert.equal(revokeResponse.body.certificate.revocationReason, "Incorrect grade");
+  assert.equal(revokedPayload.tokenId, "1");
+  assert.equal(revokedPayload.reason, "Incorrect grade");
+  assert.equal(certificateModel._certificates[0].revoked, true);
+  assert.equal(certificateModel._certificates[0].revokedBy, "admin-1");
+  assert.equal(certificateModel._certificates[0].revokeTxHash, "0xrevoked");
+});
+
+test("revoke endpoint rejects an already revoked certificate", async () => {
+  const userModel = await createAdminModel();
+  const certificateModel = createFakeCertificateModel([
+    {
+      certificateId: "CERT-2026-000000001",
+      txHash: "0xissued",
+      certificateHash: "0xhash",
+      tokenId: "1",
+      studentName: "Recipient",
+      studentEmail: "recipient@rub.edu.bt",
+      studentWalletAddress: "0x8ba1f109551bD432803012645Ac136ddd64DBA72",
+      studentWalletAddressNormalized: "0x8ba1f109551bd432803012645ac136ddd64dba72",
+      certificateType: "Bachelor of Science",
+      issueDate: "2026-04-21",
+      issuedAt: new Date("2026-04-21T10:00:00Z"),
+      revoked: true,
+    },
+  ]);
+  let revokeCalls = 0;
+  const revokeCertificate = async () => {
+    revokeCalls += 1;
+    return { txHash: "0xrevoked" };
+  };
+
+  const { app } = createTestApp({ userModel, certificateModel, revokeCertificate });
+  const agent = request.agent(app);
+
+  await loginAdmin(agent);
+
+  const revokeResponse = await agent
+    .post("/api/certificates/CERT-2026-000000001/revoke")
+    .send({ reason: "Duplicate request" });
+
+  assert.equal(revokeResponse.status, 409);
+  assert.equal(revokeResponse.body.message, "Certificate is already revoked");
+  assert.equal(revokeCalls, 0);
 });
 
 test("student can list certificates for their saved wallet", async () => {

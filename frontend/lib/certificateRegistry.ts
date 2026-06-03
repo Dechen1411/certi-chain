@@ -29,6 +29,9 @@ export interface StudentCertificateRecord {
   template?: CertificateTemplateSnapshot;
   nftHash: string;
   revoked: boolean;
+  revokedAt?: string | null;
+  revocationReason?: string;
+  revokeTxHash?: string;
   tokenUri: string;
   txHash?: string;
 }
@@ -145,6 +148,9 @@ const normalizeCertificateRecord = (certificate: StudentCertificateRecord): Stud
   nftHash: certificate.nftHash || "",
   tokenUri: certificate.tokenUri || "",
   revoked: Boolean(certificate.revoked),
+  revokedAt: certificate.revokedAt || null,
+  revocationReason: certificate.revocationReason || "",
+  revokeTxHash: certificate.revokeTxHash || "",
   issuedAt: Number(certificate.issuedAt || 0),
 });
 
@@ -193,6 +199,27 @@ export const getRegistryStats = async (): Promise<RegistryStats> => {
     ...stats,
     recentCertificates: (stats.recentCertificates || []).map(normalizeCertificateRecord),
   };
+};
+
+export const revokeCertificate = async (
+  certificateId: string,
+  reason: string,
+): Promise<StudentCertificateRecord> => {
+  const response = await fetch(`${API_BASE_URL}/certificates/${encodeURIComponent(certificateId)}/revoke`, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ reason }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseApiError(response));
+  }
+
+  const payload = await response.json() as { certificate: StudentCertificateRecord };
+  return normalizeCertificateRecord(payload.certificate);
 };
 
 export const getReadableError = (error: unknown): string => {
