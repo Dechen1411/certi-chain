@@ -1,4 +1,4 @@
-import { Plus, Search, Eye, Edit, Trash2, Copy, Award } from "lucide-react";
+import { Plus, Search, Eye, Edit, Trash2, Copy, Award, AlertTriangle } from "lucide-react";
 import { Card } from "./ui/card";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -26,6 +26,8 @@ export function CertificateTemplates() {
   const [templates, setTemplates] = useState<CertificateTemplate[]>([]);
   const [previewTemplate, setPreviewTemplate] = useState<CertificateTemplate | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [templateToDelete, setTemplateToDelete] = useState<CertificateTemplate | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const refreshTemplates = async () => {
     setIsLoading(true);
@@ -73,18 +75,21 @@ export function CertificateTemplates() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    const confirmed = window.confirm("Delete this certificate template?");
-    if (!confirmed) {
+  const handleDelete = async () => {
+    if (!templateToDelete) {
       return;
     }
 
+    setIsDeleting(true);
     try {
-      await deleteCertificateTemplate(id);
+      await deleteCertificateTemplate(templateToDelete.id);
       toast.success("Template deleted");
+      setTemplateToDelete(null);
       await refreshTemplates();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to delete template");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -195,7 +200,7 @@ export function CertificateTemplates() {
                     variant="outline"
                     size="sm"
                     className="gap-2 text-red-600 hover:text-red-700"
-                    onClick={() => void handleDelete(template.id)}
+                    onClick={() => setTemplateToDelete(template)}
                   >
                     <Trash2 className="w-4 h-4" />
                   </Button>
@@ -233,6 +238,51 @@ export function CertificateTemplates() {
           )}
         </Card>
       </div>
+
+      {templateToDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 px-4 py-6 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-template-title"
+        >
+          <Card className={cn("w-full max-w-md gap-0 overflow-hidden border-0 shadow-2xl", subtlePanelClass)}>
+            <div className="flex items-start gap-4 border-b border-gray-100 p-6">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-red-50 text-red-600">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <h2 id="delete-template-title" className="text-lg font-semibold text-gray-950">
+                  Delete template?
+                </h2>
+                <p className="mt-1 text-sm text-gray-600">
+                  This will permanently remove{" "}
+                  <span className="font-medium text-gray-900">{templateToDelete.name}</span>.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-col-reverse gap-3 p-6 sm:flex-row sm:justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setTemplateToDelete(null)}
+                disabled={isDeleting}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                className="bg-red-600 text-white hover:bg-red-700"
+                onClick={() => void handleDelete()}
+                disabled={isDeleting}
+              >
+                <Trash2 className="h-4 w-4" />
+                {isDeleting ? "Deleting..." : "Delete Template"}
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }
