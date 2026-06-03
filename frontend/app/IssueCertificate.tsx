@@ -170,7 +170,7 @@ export function IssueCertificate() {
     <div className="space-y-6">
       <PageHeader
         title="Issue Certificate"
-        description="Issue a new certificate to a student's saved wallet."
+        description="Issue a new certificate to the student's account-bound address."
         backTo="/admin/dashboard"
       />
 

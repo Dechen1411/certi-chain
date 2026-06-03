@@ -1,7 +1,7 @@
 const bcrypt = require("bcryptjs");
 const cookieParser = require("cookie-parser");
 const cors = require("cors");
-const { randomInt, randomUUID } = require("crypto");
+const { createHmac, randomInt, randomUUID } = require("crypto");
 const express = require("express");
 const { getAddress, isAddress, keccak256, toUtf8Bytes } = require("ethers");
 const helmet = require("helmet");
@@ -44,6 +44,25 @@ const createTemplateId = () => {
 
 const createSignupOtp = () => {
   return randomInt(0, 1_000_000).toString().padStart(6, "0");
+};
+
+const createAccountBoundWalletAddress = (email, secret) => {
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  const digest = createHmac("sha256", String(secret || "certichain-wallet"))
+    .update(`certichain:student-wallet:${normalizedEmail}`)
+    .digest("hex");
+
+  return getAddress(`0x${digest.slice(-40)}`);
+};
+
+const createStudentWalletFields = (email, secret) => {
+  const walletAddress = createAccountBoundWalletAddress(email, secret);
+
+  return {
+    walletAddress,
+    walletAddressNormalized: walletAddress.toLowerCase(),
+    walletVerifiedAt: new Date(),
+  };
 };
 
 const isValidEmail = (email) => {
@@ -231,12 +250,12 @@ const getCertificateInputError = (certificate) => {
   return "";
 };
 
-const resolveCertificateStudentWallet = async (certificate, User) => {
+const resolveCertificateStudentWallet = async (certificate, User, ensureStudentWallet) => {
   if (certificate.studentWalletAddress) {
     return { certificate };
   }
 
-  const student = await executeMaybeLean(User.findOne({
+  let student = await executeMaybeLean(User.findOne({
     email: certificate.studentEmail,
     role: "student",
   }));
@@ -248,10 +267,14 @@ const resolveCertificateStudentWallet = async (certificate, User) => {
     };
   }
 
+  if (!student.walletAddress && typeof ensureStudentWallet === "function") {
+    student = await ensureStudentWallet(student);
+  }
+
   const walletAddress = normalizeWalletAddress(student.walletAddress);
   if (!walletAddress) {
     return {
-      message: "Student has not connected a wallet yet",
+      message: "Student account does not have an assigned wallet yet",
       statusCode: 409,
     };
   }
@@ -317,7 +340,7 @@ const createHelmetOptions = () => ({
       ],
       fontSrc: ["'self'", "data:"],
       formAction: ["'self'"],
-      frameSrc: ["'self'", "https://auth.privy.io", "https://*.privy.io"],
+      frameSrc: ["'self'"],
       frameAncestors: ["'none'"],
       imgSrc: ["'self'", "data:", "blob:", "https:"],
       objectSrc: ["'none'"],
@@ -493,6 +516,26 @@ const createApp = ({
   const deliverSignupOtp = typeof sendSignupOtp === "function"
     ? sendSignupOtp
     : async ({ otp }) => ({ delivered: false, previewOtp: otp });
+
+  const assignStudentWalletFields = (email) => createStudentWalletFields(email, jwtSecret);
+
+  const ensureStudentWallet = async (user) => {
+    if (!user || user.role !== "student" || normalizeWalletAddress(user.walletAddress)) {
+      return user;
+    }
+
+    const updatedUserQuery = User.findOneAndUpdate(
+      { id: user.id, role: "student" },
+      assignStudentWalletFields(user.email),
+      { new: true, runValidators: true },
+    );
+
+    if (typeof updatedUserQuery?.select === "function") {
+      updatedUserQuery.select("id username email role name walletAddress walletVerifiedAt");
+    }
+
+    return executeMaybeLean(updatedUserQuery);
+  };
 
   const deleteExpiredPendingSignups = () => {
     const now = Date.now();
@@ -703,24 +746,19 @@ const createApp = ({
       return res.status(409).json({ message: "Email or username already registered" });
     }
 
-    await User.create({
+    const createdUser = await User.create({
       id: pending.id,
       username: pending.username,
       email: pending.email,
       passwordHash: pending.passwordHash,
       role: pending.role,
       name: pending.name,
+      ...assignStudentWalletFields(pending.email),
     });
 
     pendingSignups.delete(email);
 
-    const user = {
-      id: pending.id,
-      username: pending.username,
-      email: pending.email,
-      role: pending.role,
-      name: pending.name,
-    };
+    const user = toPublicUser(createdUser);
     const token = issueToken(user);
     res.cookie(AUTH_COOKIE_NAME, token, authCookieOptions);
     return res.status(201).json({ user });
@@ -860,7 +898,7 @@ const createApp = ({
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
-    const publicUser = toPublicUser(user);
+    const publicUser = toPublicUser(await ensureStudentWallet(user));
     const token = issueToken(publicUser);
     res.cookie(AUTH_COOKIE_NAME, token, authCookieOptions);
     return res.json({ user: publicUser });
@@ -900,50 +938,36 @@ const createApp = ({
       return res.status(401).json({ message: "User no longer exists" });
     }
 
-    return res.json({ user: toPublicUser(user) });
+    return res.json({ user: toPublicUser(await ensureStudentWallet(user)) });
   });
 
   app.post("/api/student/wallet/bind", authenticate, requireRole("student"), async (req, res) => {
-    const walletAddress = normalizeWalletAddress(req.body?.walletAddress);
-    if (!walletAddress) {
-      return res.status(400).json({ message: "Valid Ethereum wallet address is required" });
-    }
-
-    const walletAddressNormalized = walletAddress.toLowerCase();
-    const existingWalletUser = await executeMaybeLean(
-      User.findOne({ walletAddressNormalized }),
-    );
-    if (existingWalletUser && existingWalletUser.id !== req.auth.sub) {
-      return res.status(409).json({ message: "Wallet is already linked to another student" });
-    }
-
     try {
-      const updatedUserQuery = User.findOneAndUpdate(
-        { id: req.auth.sub, role: "student" },
-        {
-          walletAddress,
-          walletAddressNormalized,
-          walletVerifiedAt: new Date(),
-        },
-        { new: true, runValidators: true },
-      );
-
-      if (typeof updatedUserQuery?.select === "function") {
-        updatedUserQuery.select("id username email role name walletAddress walletVerifiedAt");
-      }
-
-      const updatedUser = await executeMaybeLean(updatedUserQuery);
-      if (!updatedUser) {
+      const student = await executeMaybeLean(User.findOne({ id: req.auth.sub, role: "student" }));
+      if (!student) {
         return res.status(404).json({ message: "Student account not found" });
       }
 
-      return res.json({ user: toPublicUser(updatedUser) });
-    } catch (error) {
-      if (error?.code === 11000) {
-        return res.status(409).json({ message: "Wallet is already linked to another student" });
+      const assignedWalletAddress = normalizeWalletAddress(student.walletAddress);
+      const requestedWalletInput = String(req.body?.walletAddress || "").trim();
+      const requestedWalletAddress = normalizeWalletAddress(requestedWalletInput);
+
+      if (requestedWalletInput && !requestedWalletAddress) {
+        return res.status(400).json({ message: "Valid Ethereum wallet address is required" });
       }
 
-      return res.status(500).json({ message: "Unable to save wallet" });
+      if (
+        assignedWalletAddress &&
+        requestedWalletAddress &&
+        requestedWalletAddress.toLowerCase() !== assignedWalletAddress.toLowerCase()
+      ) {
+        return res.status(409).json({ message: "Wallet address is locked to this student account" });
+      }
+
+      const updatedUser = await ensureStudentWallet(student);
+      return res.json({ user: toPublicUser(updatedUser) });
+    } catch {
+      return res.status(500).json({ message: "Unable to prepare account wallet" });
     }
   });
 
@@ -1135,7 +1159,7 @@ const createApp = ({
       return res.status(400).json({ message: validationError });
     }
 
-    const resolvedStudent = await resolveCertificateStudentWallet(certificateInput, User);
+    const resolvedStudent = await resolveCertificateStudentWallet(certificateInput, User, ensureStudentWallet);
     if (resolvedStudent.message) {
       return res.status(resolvedStudent.statusCode).json({ message: resolvedStudent.message });
     }
@@ -1214,7 +1238,7 @@ const createApp = ({
         continue;
       }
 
-      const resolvedStudent = await resolveCertificateStudentWallet(certificateInput, User);
+      const resolvedStudent = await resolveCertificateStudentWallet(certificateInput, User, ensureStudentWallet);
       if (resolvedStudent.message) {
         failed.push({
           studentEmail: certificateInput.studentEmail,

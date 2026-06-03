@@ -54,8 +54,6 @@ ADMIN_PASSWORD=change_admin_password
 CHAIN_RPC_URL=http://127.0.0.1:8545
 CERTIFICATE_REGISTRY_ADDRESS=0x...
 ISSUER_PRIVATE_KEY=0x...
-PRIVY_APP_ID=your_privy_app_id
-PRIVY_APP_SECRET=your_privy_app_secret
 EMAIL_API_PROVIDER=brevo
 EMAIL_API_KEY=your_brevo_api_key
 EMAIL_API_URL=
@@ -85,7 +83,6 @@ VITE_CHAIN_ID=31337
 VITE_CERTIFICATE_REGISTRY_DEPLOYMENT_BLOCK=
 VITE_EVENT_LOOKBACK_BLOCKS=10
 VITE_EVENT_QUERY_CHUNK_BLOCKS=10
-VITE_PRIVY_APP_ID=your_privy_app_id
 ```
 
 For Sepolia, use `VITE_CHAIN_ID=11155111`. If your RPC rejects large event
@@ -113,9 +110,6 @@ Before deploy, configure these Render environment variables:
 - `VITE_CERTIFICATE_REGISTRY_DEPLOYMENT_BLOCK`
 - `VITE_EVENT_LOOKBACK_BLOCKS`
 - `VITE_EVENT_QUERY_CHUNK_BLOCKS`
-- `VITE_PRIVY_APP_ID`
-- `PRIVY_APP_ID`
-- `PRIVY_APP_SECRET`
 - `EMAIL_API_PROVIDER`
 - `EMAIL_API_KEY`
 - `EMAIL_API_URL`
@@ -140,26 +134,22 @@ MongoDB stores application data:
 
 - admin and student user accounts
 - reusable certificate templates
-- verified student wallet bindings from Privy
+- account-bound student certificate addresses
 
 The blockchain stores issued certificate proof data:
 
 - certificate hash
 - NFT token ID
-- student wallet owner
+- student certificate address
 - issued/revoked status
 - token URI metadata
 
 Template CRUD is served by authenticated admin endpoints under `/api/templates`.
 
-Student wallet login and embedded wallet creation are handled by Privy in the frontend.
-When a student connects a wallet, the frontend sends Privy's access token to the backend,
-the backend verifies it with `@privy-io/node`, confirms the wallet belongs to that Privy
-user, and saves the verified wallet address on the student record in MongoDB.
-After a student signs in to CertiChain, the dashboard automatically starts Privy email
-wallet setup for accounts without a saved wallet and saves the wallet once Privy proves
-ownership. This keeps the student flow simple while still preventing the backend from
-trusting an email address as wallet ownership.
+Student certificate addresses are assigned by the backend after email OTP signup
+verification. The address is generated from the verified student email and a backend-only
+secret, saved on the student record, and reused whenever certificates are issued by email.
+Students can copy the address from their dashboard, but they cannot replace it later.
 
 Student registration and password reset use email OTP verification. The backend stores
 pending OTPs with hashed codes for 10 minutes, sends the code through a transactional
@@ -173,10 +163,8 @@ For Render deployment, prefer `EMAIL_API_PROVIDER=brevo` plus `EMAIL_API_KEY` or
 `BREVO_API_KEY` because HTTPS email APIs avoid SMTP port timeouts. SMTP settings remain
 available as a fallback for local or hosting environments where outbound SMTP works.
 
-Set `VITE_PRIVY_APP_ID` for the frontend and set `PRIVY_APP_ID` plus
-`PRIVY_APP_SECRET` on the backend. Keep `PRIVY_APP_SECRET` backend-only; never expose it
-in frontend env variables. The app no longer generates local browser wallets or exposes
-private keys.
+Student certificate addresses are generated server-side. The app does not expose student
+private keys or require students to connect a third-party wallet provider.
 
 ## Smart Contract
 

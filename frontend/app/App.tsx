@@ -1,17 +1,11 @@
-import { lazy, Suspense } from "react";
+import { Suspense } from "react";
 import { RouterProvider } from "react-router";
 import { router } from "../routes";
 import { AuthProvider } from "../context/AuthContext";
 import { Toaster } from "./ui/sonner";
 import { Award } from "lucide-react";
 import { IconBadge } from "./ui/app-primitives";
-import { isPrivyConfigured } from "../lib/privy";
 import { AppErrorBoundary } from "./AppErrorBoundary";
-import { lazyWithReload } from "../lib/lazyWithReload";
-
-const PrivyAppProvider = lazyWithReload("privy-provider", () =>
-  import("./PrivyAppProvider").then((module) => ({ default: module.PrivyAppProvider })),
-);
 
 function LoadingFallback() {
   return (
@@ -38,17 +32,9 @@ function AppShell() {
 }
 
 export default function App() {
-  const app = <AppShell />;
-
-  if (!isPrivyConfigured) {
-    return <AppErrorBoundary>{app}</AppErrorBoundary>;
-  }
-
   return (
     <AppErrorBoundary>
-      <Suspense fallback={<LoadingFallback />}>
-        <PrivyAppProvider>{app}</PrivyAppProvider>
-      </Suspense>
+      <AppShell />
     </AppErrorBoundary>
   );
 }

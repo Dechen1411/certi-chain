@@ -367,7 +367,7 @@ export function BulkIssueCertificate() {
     <div className="space-y-6">
       <PageHeader
         title="Bulk Issue Certificates"
-        description="Issue certificates to multiple students using their saved wallet emails."
+        description="Issue certificates to multiple students using their verified account emails."
         backTo="/admin/dashboard"
       />
 

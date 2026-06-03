@@ -17,12 +17,12 @@ import { cn } from "./ui/utils";
 
 const trustStats = [
   { label: "Verification", value: "Live", icon: ShieldCheck, tone: "green" as const },
-  { label: "Student Access", value: "Wallet-secured", icon: Wallet, tone: "blue" as const },
+  { label: "Student Access", value: "Account-bound", icon: Wallet, tone: "blue" as const },
   { label: "Records", value: "Protected", icon: LockKeyhole, tone: "purple" as const },
 ];
 
 const studentHighlights = [
-  "Wallet-linked certificates",
+  "Account-bound certificate address",
   "Downloadable certificate file",
   "Employer-ready QR verification",
 ];
@@ -47,8 +47,8 @@ const architectureSteps = [
     tone: "purple" as const,
   },
   {
-    title: "Wallet linking",
-    description: "Students save a wallet before certificates appear in their account.",
+    title: "Account wallet",
+    description: "Each student gets one fixed certificate address from their verified email.",
     icon: Wallet,
     tone: "green" as const,
   },
@@ -78,7 +78,7 @@ export function PublicDashboard() {
               Digital Certificate Awarding System
             </p>
             <p className="max-w-xl text-base leading-7 text-gray-600 sm:text-lg">
-              Issue academic certificates, assign them to saved student wallets,
+              Issue academic certificates, assign them to account-bound student addresses,
               and let employers confirm authenticity by ID or QR code.
             </p>
           </div>
@@ -195,7 +195,7 @@ export function PublicDashboard() {
             <div>
               <h2 className="text-xl font-semibold text-gray-950">For Students</h2>
               <p className="mt-1 text-sm leading-6 text-gray-600">
-                Connect a secure wallet and keep issued certificates in one place.
+                Use your verified email account to keep issued certificates in one place.
               </p>
             </div>
           </div>
@@ -264,7 +264,7 @@ export function PublicDashboard() {
               </div>
               <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-slate-50 px-4 py-3">
                 <span className="font-medium text-gray-700">Student wallet</span>
-                <span className="font-semibold text-blue-700">Verified</span>
+                <span className="font-semibold text-blue-700">Account-bound</span>
               </div>
               <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-slate-50 px-4 py-3">
                 <span className="font-medium text-gray-700">Certificate proof</span>

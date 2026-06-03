@@ -1,6 +1,8 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const { createHmac } = require("node:crypto");
 const bcrypt = require("bcryptjs");
+const { getAddress } = require("ethers");
 const request = require("supertest");
 
 const { createApp } = require("../app");
@@ -16,6 +18,16 @@ const getTomorrowDateInputValue = () => {
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
   return toDateInputValue(tomorrow);
+};
+
+const TEST_JWT_SECRET = "test_jwt_secret";
+
+const createExpectedAccountWallet = (email) => {
+  const digest = createHmac("sha256", TEST_JWT_SECRET)
+    .update(`certichain:student-wallet:${String(email).trim().toLowerCase()}`)
+    .digest("hex");
+
+  return getAddress(`0x${digest.slice(-40)}`);
 };
 
 const createFakeUserModel = (initialUsers = []) => {
@@ -212,7 +224,7 @@ const createTestApp = (overrides = {}) => {
     User: userModel,
     issueCertificate,
     frontendOrigin: "http://localhost:5173",
-    jwtSecret: "test_jwt_secret",
+    jwtSecret: TEST_JWT_SECRET,
     jwtExpiresIn: "12h",
     allowedStudentDomain: "@rub.edu.bt",
     isProduction: false,
@@ -269,8 +281,12 @@ test("signup ignores requested admin role and creates student account", async ()
 
   assert.equal(response.status, 201);
   assert.equal(response.body.user.role, "student");
+  assert.equal(response.body.user.walletAddress, createExpectedAccountWallet("student@rub.edu.bt"));
+  assert.ok(response.body.user.walletVerifiedAt);
   assert.equal(userModel._users.length, 1);
   assert.equal(userModel._users[0].role, "student");
+  assert.equal(userModel._users[0].walletAddress, createExpectedAccountWallet("student@rub.edu.bt"));
+  assert.equal(userModel._users[0].walletAddressNormalized, createExpectedAccountWallet("student@rub.edu.bt").toLowerCase());
 });
 
 test("signup rejects invalid email addresses", async () => {
@@ -461,9 +477,9 @@ test("student session cannot issue certificates", async () => {
   assert.equal(issueResponse.status, 403);
 });
 
-test("student can save a connected wallet without a Privy access token", async () => {
+test("student login assigns an account-bound wallet", async () => {
   const studentHash = await bcrypt.hash("StudentPass123!", 12);
-  const walletAddress = "0x8ba1f109551bD432803012645Ac136ddd64DBA72";
+  const expectedWalletAddress = createExpectedAccountWallet("student@rub.edu.bt");
   const userModel = createFakeUserModel([
     {
       id: "student-1",
@@ -484,16 +500,17 @@ test("student can save a connected wallet without a Privy access token", async (
   });
 
   assert.equal(loginResponse.status, 200);
+  assert.equal(loginResponse.body.user.walletAddress, expectedWalletAddress);
+  assert.ok(loginResponse.body.user.walletVerifiedAt);
+  assert.equal(model._users[0].walletAddress, expectedWalletAddress);
+  assert.equal(model._users[0].walletAddressNormalized, expectedWalletAddress.toLowerCase());
 
   const response = await agent
     .post("/api/student/wallet/bind")
-    .send({ walletAddress: walletAddress.toLowerCase() });
+    .send({ walletAddress: expectedWalletAddress.toLowerCase() });
 
   assert.equal(response.status, 200);
-  assert.equal(response.body.user.walletAddress, walletAddress);
-  assert.ok(response.body.user.walletVerifiedAt);
-  assert.equal(model._users[0].walletAddress, walletAddress);
-  assert.equal(model._users[0].walletAddressNormalized, walletAddress.toLowerCase());
+  assert.equal(response.body.user.walletAddress, expectedWalletAddress);
 });
 
 test("wallet binding rejects invalid wallet addresses", async () => {
@@ -523,10 +540,10 @@ test("wallet binding rejects invalid wallet addresses", async () => {
 
   assert.equal(response.status, 400);
   assert.equal(response.body.message, "Valid Ethereum wallet address is required");
-  assert.equal(model._users[0].walletAddress, undefined);
+  assert.equal(model._users[0].walletAddress, createExpectedAccountWallet("student@rub.edu.bt"));
 });
 
-test("wallet binding prevents one wallet from being linked to two students", async () => {
+test("wallet binding prevents students from replacing their assigned wallet", async () => {
   const studentHash = await bcrypt.hash("StudentPass123!", 12);
   const walletAddress = "0x8ba1f109551bD432803012645Ac136ddd64DBA72";
   const userModel = createFakeUserModel([
@@ -537,17 +554,6 @@ test("wallet binding prevents one wallet from being linked to two students", asy
       passwordHash: studentHash,
       role: "student",
       name: "Student",
-    },
-    {
-      id: "student-2",
-      username: "linked",
-      email: "linked@rub.edu.bt",
-      passwordHash: studentHash,
-      role: "student",
-      name: "Linked Student",
-      walletAddress,
-      walletAddressNormalized: walletAddress.toLowerCase(),
-      walletVerifiedAt: new Date(),
     },
   ]);
 
@@ -564,7 +570,7 @@ test("wallet binding prevents one wallet from being linked to two students", asy
     .send({ walletAddress });
 
   assert.equal(response.status, 409);
-  assert.equal(response.body.message, "Wallet is already linked to another student");
+  assert.equal(response.body.message, "Wallet address is locked to this student account");
 });
 
 test("admin session can issue certificates", async () => {
@@ -645,6 +651,44 @@ test("admin can issue certificates using the student's saved wallet email", asyn
   assert.equal(issueResponse.body.certificate.studentWalletAddress, walletAddress);
   assert.equal(issuedPayload.studentWalletAddress, walletAddress);
   assert.equal(certificateModel._certificates[0].studentWalletAddressNormalized, walletAddress.toLowerCase());
+});
+
+test("admin can issue certificates using a student's assigned account wallet", async () => {
+  const userModel = await createAdminModel();
+  const expectedWalletAddress = createExpectedAccountWallet("recipient@rub.edu.bt");
+  userModel._users.push({
+    id: "student-1",
+    username: "recipient",
+    email: "recipient@rub.edu.bt",
+    passwordHash: "hashed-password",
+    role: "student",
+    name: "Recipient",
+  });
+
+  let issuedPayload = null;
+  const issueCertificate = async (payload) => {
+    issuedPayload = payload;
+    return { txHash: "0xissued" };
+  };
+
+  const { app, certificateModel, userModel: model } = createTestApp({ userModel, issueCertificate });
+  const agent = request.agent(app);
+
+  await loginAdmin(agent);
+
+  const issueResponse = await agent.post("/api/certificates/issue").send({
+    studentName: "Recipient",
+    studentEmail: "recipient@rub.edu.bt",
+    certificateType: "Bachelor of Science",
+    department: "Computer Science",
+    issueDate: "2026-04-21",
+  });
+
+  assert.equal(issueResponse.status, 201);
+  assert.equal(issueResponse.body.certificate.studentWalletAddress, expectedWalletAddress);
+  assert.equal(issuedPayload.studentWalletAddress, expectedWalletAddress);
+  assert.equal(model._users[1].walletAddress, expectedWalletAddress);
+  assert.equal(certificateModel._certificates[0].studentWalletAddressNormalized, expectedWalletAddress.toLowerCase());
 });
 
 test("admin can issue a certificate from a saved template", async () => {

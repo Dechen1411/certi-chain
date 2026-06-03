@@ -202,7 +202,7 @@ export const buildCertificateHtml = (certificate: StudentCertificateRecord): str
 
       <section class="footer">
         <div class="footer-block">
-          <span class="label">Student Wallet</span>
+          <span class="label">Student Address</span>
           <span class="hash">${escapeHtml(certificate.studentWalletAddress)}</span>
         </div>
         <div class="footer-block">

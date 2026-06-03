@@ -24,7 +24,6 @@ import {
 } from "./ui/app-primitives";
 import { cn } from "./ui/utils";
 import { useAuth } from "../context/AuthContext";
-import { isPrivyConfigured } from "../lib/privy";
 
 export function StudentCertificates() {
   const { user } = useAuth();
@@ -85,16 +84,14 @@ export function StudentCertificates() {
               icon={Award}
               title={isLoading ? "Loading certificates" : "No certificates yet"}
               description={
-                !isPrivyConfigured
-                  ? "Wallet connection is temporarily unavailable. Please contact the administrator."
-                  : !walletAddress
-                  ? "Open your dashboard so CertiChain can prepare your wallet."
+                !walletAddress
+                  ? "Your account wallet is still being prepared."
                   : isLoading
                   ? "Loading your certificate records."
                   : "Certificates issued to your wallet will appear here."
               }
               action={
-                isPrivyConfigured && !walletAddress ? (
+                !walletAddress ? (
                   <Link to="/student/dashboard">
                     <Button className={primaryActionClass}>Open Dashboard</Button>
                   </Link>

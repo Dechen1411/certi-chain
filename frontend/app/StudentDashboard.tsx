@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Award, Copy, Download, Eye, FileText } from "lucide-react";
 import { Card } from "./ui/card";
 import { Button } from "./ui/button";
 import { Link } from "react-router";
-import { useAuth, type User } from "../context/AuthContext";
+import { useAuth } from "../context/AuthContext";
 import { toast } from "sonner";
 import {
   getReadableError,
@@ -23,24 +23,16 @@ import {
   subtlePanelClass,
 } from "./ui/app-primitives";
 import { cn } from "./ui/utils";
-import { isPrivyConfigured } from "../lib/privy";
-import { PrivyStudentWalletActions } from "./PrivyStudentWallet";
 
 export function StudentDashboard() {
-  const { refreshUser, user } = useAuth();
-  const verifiedWalletAddress = user?.walletAddress || "";
-  const [connectedWalletAddress, setConnectedWalletAddress] = useState<string>("");
+  const { user } = useAuth();
+  const accountWalletAddress = user?.walletAddress || "";
   const [recentCertificates, setRecentCertificates] = useState<StudentCertificateRecord[]>([]);
   const [totalCertificates, setTotalCertificates] = useState(0);
   const [isLoadingCertificates, setIsLoadingCertificates] = useState(false);
-  const displayedWalletAddress = verifiedWalletAddress || connectedWalletAddress;
 
   useEffect(() => {
-    setConnectedWalletAddress(verifiedWalletAddress);
-  }, [verifiedWalletAddress]);
-
-  useEffect(() => {
-    if (!verifiedWalletAddress) {
+    if (!accountWalletAddress) {
       setRecentCertificates([]);
       setTotalCertificates(0);
       return;
@@ -49,7 +41,7 @@ export function StudentDashboard() {
     const loadCertificates = async () => {
       setIsLoadingCertificates(true);
       try {
-        const certificates = await getStudentCertificates(verifiedWalletAddress);
+        const certificates = await getStudentCertificates(accountWalletAddress);
         setTotalCertificates(certificates.length);
         setRecentCertificates(certificates.slice(0, 3));
       } catch (error) {
@@ -60,26 +52,17 @@ export function StudentDashboard() {
     };
 
     void loadCertificates();
-  }, [verifiedWalletAddress]);
+  }, [accountWalletAddress]);
 
-  const handleWalletAddressChange = useCallback((address: string) => {
-    setConnectedWalletAddress(address);
-  }, []);
-
-  const handleWalletVerified = useCallback(async (updatedUser: User) => {
-    setConnectedWalletAddress(updatedUser.walletAddress || "");
-    await refreshUser();
-  }, [refreshUser]);
-
-  const handleCopyWallet = useCallback(async () => {
-    if (!displayedWalletAddress) {
-      toast.error("Connect your wallet first");
+  const handleCopyWallet = async () => {
+    if (!accountWalletAddress) {
+      toast.error("Wallet address is still being prepared");
       return;
     }
 
-    await navigator.clipboard.writeText(displayedWalletAddress);
+    await navigator.clipboard.writeText(accountWalletAddress);
     toast.success("Wallet address copied");
-  }, [displayedWalletAddress]);
+  };
 
   const handleViewCertificate = (certificate: StudentCertificateRecord) => {
     try {
@@ -98,7 +81,7 @@ export function StudentDashboard() {
     <div className="space-y-8">
       <PageHeader
         title={`Welcome back, ${user?.name || "Student"}`}
-        description="Your wallet is prepared automatically so certificates can land in your account."
+        description="Your certificate address is assigned to your account and cannot be changed."
       />
 
       {/* Stats Grid */}
@@ -125,50 +108,27 @@ export function StudentDashboard() {
           <div className="min-w-0 flex-1">
             <h2 className="text-xl text-gray-900 mb-1">Wallet Address</h2>
             <p className="text-sm text-gray-600 mb-4">
-              Use this address to receive and view your certificates. New students get a wallet prepared automatically after login.
+              CertiChain assigns this address from your verified email, so certificates stay tied to this account.
             </p>
 
             <div className="p-3 rounded-lg bg-gray-50 border border-gray-200 min-h-12 flex items-center">
               <p className="text-sm text-gray-800 break-all font-mono">
-                {displayedWalletAddress || "Wallet not connected"}
+                {accountWalletAddress || "Preparing account wallet"}
               </p>
             </div>
 
-            {verifiedWalletAddress && (
+            {accountWalletAddress && (
               <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
-                Wallet saved and ready to receive certificates.
-              </div>
-            )}
-
-            {!verifiedWalletAddress && connectedWalletAddress && (
-              <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                Wallet detected. Saving it to your student account.
-              </div>
-            )}
-
-            {!isPrivyConfigured && (
-              <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                Wallet connection is temporarily unavailable. Please contact the administrator.
+                Address locked and ready to receive certificates.
               </div>
             )}
           </div>
 
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-[160px]">
-            {isPrivyConfigured ? (
-              <PrivyStudentWalletActions
-                autoSetup={!verifiedWalletAddress}
-                onCopyWallet={handleCopyWallet}
-                onWalletAddressChange={handleWalletAddressChange}
-                onWalletVerified={handleWalletVerified}
-                userEmail={user?.email || ""}
-                verifiedWalletAddress={verifiedWalletAddress}
-              />
-            ) : (
-              <Button variant="outline" className="gap-2" disabled>
-                <Copy className="w-4 h-4" />
-                Copy Address
-              </Button>
-            )}
+            <Button variant="outline" className="gap-2" onClick={() => void handleCopyWallet()} disabled={!accountWalletAddress}>
+              <Copy className="w-4 h-4" />
+              Copy Address
+            </Button>
           </div>
         </div>
       </Card>
