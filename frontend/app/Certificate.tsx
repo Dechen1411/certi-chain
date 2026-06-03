@@ -108,7 +108,7 @@ export function Certificates() {
           </Card>
         ) : filteredCertificates.map((certificate) => (
           <Card key={certificate.tokenId} className={cn("transition-all hover:shadow-md overflow-hidden", subtlePanelClass)}>
-            <div className="h-40 bg-gradient-to-br from-slate-700 to-slate-900 p-6 flex items-center justify-center relative">
+            <div className={`h-40 bg-gradient-to-br ${certificate.template?.color || "from-slate-700 to-slate-900"} p-6 flex items-center justify-center relative`}>
               <div className="text-center text-white">
                 <IconBadge icon={Award} tone="slate" className="mx-auto mb-3 h-16 w-16 border-white/30 bg-white/15 text-white" />
                 <p className="text-sm opacity-90">{certificate.certificateType}</p>

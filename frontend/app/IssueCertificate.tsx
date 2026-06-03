@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Award, Eye } from "lucide-react";
 import { Card } from "./ui/card";
 import { Button } from "./ui/button";
@@ -11,9 +11,13 @@ import { API_BASE_URL, parseApiError } from "../lib/api";
 import {
   getReadableError,
 } from "../lib/certificateRegistry";
-import { CERTIFICATE_TYPE_OPTIONS } from "../lib/certificateTypes";
+import { CERTIFICATE_TYPE_OPTIONS, getCertificateTemplateOptions } from "../lib/certificateTypes";
 import { getTodayDateInputValue, isFutureDateInputValue } from "../lib/dateInput";
 import { DEPARTMENT_OPTIONS } from "../lib/departments";
+import {
+  CertificateTemplate,
+  getCertificateTemplates,
+} from "../lib/templateStore";
 import {
   PageHeader,
   primaryActionClass,
@@ -42,6 +46,61 @@ export function IssueCertificate() {
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [lastIssuedId, setLastIssuedId] = useState<string | null>(null);
+  const [templates, setTemplates] = useState<CertificateTemplate[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadTemplates = async () => {
+      setIsLoadingTemplates(true);
+      try {
+        const nextTemplates = await getCertificateTemplates();
+        if (isMounted) {
+          setTemplates(nextTemplates);
+        }
+      } catch (error) {
+        if (isMounted) {
+          toast.error(error instanceof Error ? error.message : "Unable to load certificate templates");
+          setTemplates([]);
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingTemplates(false);
+        }
+      }
+    };
+
+    void loadTemplates();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const selectedTemplate = selectedTemplateId
+    ? templates.find((template) => template.id === selectedTemplateId) || null
+    : null;
+  const certificateOptions = templates.length > 0
+    ? getCertificateTemplateOptions(templates)
+    : CERTIFICATE_TYPE_OPTIONS;
+  const selectedCertificateValue = selectedTemplateId || formData.certificateType;
+
+  const handleCertificateSelection = (value: string) => {
+    const template = templates.find((item) => item.id === value);
+    if (template) {
+      setSelectedTemplateId(template.id);
+      setFormData({
+        ...formData,
+        certificateType: template.title || template.name,
+      });
+      return;
+    }
+
+    setSelectedTemplateId("");
+    setFormData({ ...formData, certificateType: value });
+  };
 
   const handleSubmit = async () => {
     // Validate required fields
@@ -65,6 +124,7 @@ export function IssueCertificate() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+        templateId: selectedTemplateId || undefined,
         studentName: formData.studentName,
         studentEmail: formData.studentEmail,
         studentId: formData.studentId,
@@ -98,6 +158,7 @@ export function IssueCertificate() {
         completionDate: "",
         additionalNotes: "",
       });
+      setSelectedTemplateId("");
     } catch (error) {
       toast.error(getReadableError(error));
     } finally {
@@ -174,10 +235,10 @@ export function IssueCertificate() {
                 <Label htmlFor="certificateType">Certificate Type</Label>
                 <FancySelect
                   id="certificateType"
-                  value={formData.certificateType}
-                  placeholder="Select certificate type"
-                  options={CERTIFICATE_TYPE_OPTIONS}
-                  onChange={(certificateType) => setFormData({ ...formData, certificateType })}
+                  value={selectedCertificateValue}
+                  placeholder={isLoadingTemplates ? "Loading templates..." : "Select certificate template"}
+                  options={certificateOptions}
+                  onChange={handleCertificateSelection}
                 />
               </div>
 
@@ -252,24 +313,24 @@ export function IssueCertificate() {
         <div className="lg:sticky lg:top-6 h-fit">
           <Card className={cn("p-6", subtlePanelClass)}>
             <h2 className="text-xl text-gray-900 mb-4">Certificate Preview</h2>
-            <div className="bg-gradient-to-br from-slate-700 to-slate-900 p-8 rounded-lg aspect-[1.414/1] flex flex-col justify-between text-white">
+            <div className={`bg-gradient-to-br ${selectedTemplate?.color || "from-slate-700 to-slate-900"} p-8 rounded-lg aspect-[1.414/1] flex flex-col justify-between text-white`}>
               {/* Header */}
               <div className="text-center">
                 <div className="w-16 h-16 mx-auto mb-4 border-4 border-white/30 rounded-full flex items-center justify-center">
                   <Award className="w-8 h-8" />
                 </div>
-                <h3 className="text-2xl mb-2">{formData.certificateType || "Certificate Template"}</h3>
-                <p className="text-sm opacity-90">College Certificate</p>
+                <h3 className="text-2xl mb-2">{selectedTemplate?.title || formData.certificateType || "Certificate Template"}</h3>
+                <p className="text-sm opacity-90">{selectedTemplate?.category || "College Certificate"}</p>
               </div>
 
               {/* Body */}
               <div className="text-center space-y-4">
-                <p className="text-sm opacity-90">This is to certify that</p>
+                <p className="text-sm opacity-90">{selectedTemplate?.subtitle || "This is to certify that"}</p>
                 <div className="py-3 border-b-2 border-white/30">
                   <p className="text-xl">{formData.studentName || "Recipient Name"}</p>
                 </div>
                 <p className="text-sm opacity-90">
-                  {formData.certificateType || "Certificate Type"}
+                  {selectedTemplate?.body || formData.certificateType || "Certificate Type"}
                 </p>
                 {formData.grade && (
                   <p className="text-sm opacity-90">
@@ -285,6 +346,9 @@ export function IssueCertificate() {
                 </p>
                 {formData.department && (
                   <p className="text-xs opacity-75">{formData.department}</p>
+                )}
+                {selectedTemplate?.footer && (
+                  <p className="text-xs opacity-75">{selectedTemplate.footer}</p>
                 )}
                 <div className="pt-4 border-t border-white/30">
                   <p className="text-xs opacity-75">Certificate ID: {lastIssuedId || "CERT-XXXX-XXX"}</p>

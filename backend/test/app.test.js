@@ -119,7 +119,20 @@ const createFakeTemplateModel = (initialTemplates = []) => {
       return createQuery(null);
     }
 
-    Object.assign(template, update, { updatedAt: new Date() });
+    if (update.$inc) {
+      Object.entries(update.$inc).forEach(([key, amount]) => {
+        template[key] = Number(template[key] || 0) + Number(amount || 0);
+      });
+    }
+
+    if (update.$set) {
+      Object.assign(template, update.$set);
+    }
+
+    const directUpdate = { ...update };
+    delete directUpdate.$inc;
+    delete directUpdate.$set;
+    Object.assign(template, directUpdate, { updatedAt: new Date() });
     return createQuery(template);
   };
 
@@ -632,6 +645,54 @@ test("admin can issue certificates using the student's saved wallet email", asyn
   assert.equal(issueResponse.body.certificate.studentWalletAddress, walletAddress);
   assert.equal(issuedPayload.studentWalletAddress, walletAddress);
   assert.equal(certificateModel._certificates[0].studentWalletAddressNormalized, walletAddress.toLowerCase());
+});
+
+test("admin can issue a certificate from a saved template", async () => {
+  const userModel = await createAdminModel();
+  const templateModel = createFakeTemplateModel([
+    {
+      id: "template-1",
+      name: "Excellence Award",
+      category: "Achievement",
+      description: "Awarded for academic excellence",
+      title: "Certificate of Excellence",
+      subtitle: "Presented to",
+      body: "for outstanding academic achievement",
+      footer: "Issued by the registrar",
+      color: "from-green-400 to-green-600",
+      uses: 0,
+      createdAt: new Date("2026-01-01T00:00:00Z"),
+      updatedAt: new Date("2026-01-01T00:00:00Z"),
+    },
+  ]);
+
+  let issuedPayload = null;
+  const issueCertificate = async (payload) => {
+    issuedPayload = payload;
+    return { txHash: "0xissued" };
+  };
+
+  const { app, certificateModel } = createTestApp({ userModel, templateModel, issueCertificate });
+  const agent = request.agent(app);
+
+  await loginAdmin(agent);
+
+  const issueResponse = await agent.post("/api/certificates/issue").send({
+    studentName: "Recipient",
+    studentEmail: "recipient@rub.edu.bt",
+    studentWalletAddress: "0x8ba1f109551bD432803012645Ac136ddd64DBA72",
+    templateId: "template-1",
+    issueDate: "2026-04-21",
+  });
+
+  assert.equal(issueResponse.status, 201);
+  assert.equal(issuedPayload.certificateType, "Certificate of Excellence");
+  assert.equal(issueResponse.body.certificate.certificateType, "Certificate of Excellence");
+  assert.equal(issueResponse.body.certificate.template.id, "template-1");
+  assert.equal(issueResponse.body.certificate.template.body, "for outstanding academic achievement");
+  assert.equal(certificateModel._certificates[0].templateTitle, "Certificate of Excellence");
+  assert.equal(certificateModel._certificates[0].templateColor, "from-green-400 to-green-600");
+  assert.equal(templateModel._templates[0].uses, 1);
 });
 
 test("admin can list issued certificates from MongoDB", async () => {

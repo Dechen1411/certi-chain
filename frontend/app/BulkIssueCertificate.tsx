@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Upload, Users, Award, Plus, Trash2, CheckCircle, XCircle, Download } from "lucide-react";
 import { Card } from "./ui/card";
 import { Button } from "./ui/button";
@@ -8,9 +8,13 @@ import { FancySelect } from "./ui/fancy-select";
 import { toast } from "sonner";
 import { API_BASE_URL, parseApiError } from "../lib/api";
 import { getReadableError } from "../lib/certificateRegistry";
-import { CERTIFICATE_TYPE_OPTIONS } from "../lib/certificateTypes";
+import { CERTIFICATE_TYPE_OPTIONS, getCertificateTemplateOptions } from "../lib/certificateTypes";
 import { getTodayDateInputValue, isFutureDateInputValue } from "../lib/dateInput";
 import { DEPARTMENT_OPTIONS } from "../lib/departments";
+import {
+  CertificateTemplate,
+  getCertificateTemplates,
+} from "../lib/templateStore";
 import {
   EmptyState,
   PageHeader,
@@ -169,6 +173,58 @@ export function BulkIssueCertificate() {
   const [students, setStudents] = useState<Student[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [lastResult, setLastResult] = useState<BulkIssueResponse | null>(null);
+  const [templates, setTemplates] = useState<CertificateTemplate[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadTemplates = async () => {
+      setIsLoadingTemplates(true);
+      try {
+        const nextTemplates = await getCertificateTemplates();
+        if (isMounted) {
+          setTemplates(nextTemplates);
+        }
+      } catch (error) {
+        if (isMounted) {
+          toast.error(error instanceof Error ? error.message : "Unable to load certificate templates");
+          setTemplates([]);
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingTemplates(false);
+        }
+      }
+    };
+
+    void loadTemplates();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const selectedTemplate = selectedTemplateId
+    ? templates.find((template) => template.id === selectedTemplateId) || null
+    : null;
+  const certificateOptions = templates.length > 0
+    ? getCertificateTemplateOptions(templates)
+    : CERTIFICATE_TYPE_OPTIONS;
+  const selectedCertificateValue = selectedTemplateId || certificateType;
+
+  const handleCertificateSelection = (value: string) => {
+    const template = templates.find((item) => item.id === value);
+    if (template) {
+      setSelectedTemplateId(template.id);
+      setCertificateType(template.title || template.name);
+      return;
+    }
+
+    setSelectedTemplateId("");
+    setCertificateType(value);
+  };
 
   const addStudent = () => {
     setStudents((current) => [...current, createEmptyStudent()]);
@@ -237,6 +293,7 @@ export function BulkIssueCertificate() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          templateId: selectedTemplateId || undefined,
           certificateType,
           department,
           issueDate,
@@ -321,13 +378,13 @@ export function BulkIssueCertificate() {
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="certificateType">Certificate Type</Label>
+                  <Label htmlFor="certificateType">Certificate Template</Label>
                   <FancySelect
                     id="certificateType"
-                    value={certificateType}
-                    placeholder="Select certificate type"
-                    options={CERTIFICATE_TYPE_OPTIONS}
-                    onChange={setCertificateType}
+                    value={selectedCertificateValue}
+                    placeholder={isLoadingTemplates ? "Loading templates..." : "Select certificate template"}
+                    options={certificateOptions}
+                    onChange={handleCertificateSelection}
                   />
                 </div>
 
@@ -538,20 +595,20 @@ export function BulkIssueCertificate() {
 
           <Card className={cn("p-6", subtlePanelClass)}>
             <h2 className="text-xl text-gray-900 mb-4">Preview</h2>
-            <div className="bg-gradient-to-br from-slate-700 to-slate-900 p-6 rounded-lg aspect-[1.414/1] flex flex-col justify-between text-white text-sm">
+            <div className={`bg-gradient-to-br ${selectedTemplate?.color || "from-slate-700 to-slate-900"} p-6 rounded-lg aspect-[1.414/1] flex flex-col justify-between text-white text-sm`}>
               <div className="text-center">
                 <div className="w-12 h-12 mx-auto mb-2 border-4 border-white/30 rounded-full flex items-center justify-center">
                   <Award className="w-6 h-6" />
                 </div>
-                <h3 className="text-lg mb-1">{certificateType || "Certificate Type"}</h3>
+                <h3 className="text-lg mb-1">{selectedTemplate?.title || certificateType || "Certificate Type"}</h3>
               </div>
 
               <div className="text-center space-y-2">
-                <p className="text-xs opacity-90">This is to certify that</p>
+                <p className="text-xs opacity-90">{selectedTemplate?.subtitle || "This is to certify that"}</p>
                 <div className="py-2 border-b-2 border-white/30">
                   <p className="text-base">Student Name</p>
                 </div>
-                <p className="text-xs opacity-90">{certificateType || "Certificate Type"}</p>
+                <p className="text-xs opacity-90">{selectedTemplate?.body || certificateType || "Certificate Type"}</p>
               </div>
 
               <div className="text-center">
@@ -559,6 +616,9 @@ export function BulkIssueCertificate() {
                   {new Date(issueDate).toLocaleDateString()}
                 </p>
                 <p className="text-xs opacity-75">{department}</p>
+                {selectedTemplate?.footer && (
+                  <p className="text-xs opacity-75">{selectedTemplate.footer}</p>
+                )}
               </div>
             </div>
           </Card>

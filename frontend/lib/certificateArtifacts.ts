@@ -35,6 +35,20 @@ export const formatCertificateDate = (date: string | undefined): string => {
   return parsed.toLocaleDateString();
 };
 
+const gradientCssByTemplateClass: Record<string, string> = {
+  "from-blue-400 to-blue-600": "linear-gradient(135deg, #60a5fa, #2563eb)",
+  "from-purple-400 to-purple-600": "linear-gradient(135deg, #c084fc, #9333ea)",
+  "from-green-400 to-green-600": "linear-gradient(135deg, #4ade80, #16a34a)",
+  "from-orange-400 to-orange-600": "linear-gradient(135deg, #fb923c, #ea580c)",
+  "from-pink-400 to-pink-600": "linear-gradient(135deg, #f472b6, #db2777)",
+  "from-indigo-400 to-indigo-600": "linear-gradient(135deg, #818cf8, #4f46e5)",
+  "from-slate-700 to-slate-900": "linear-gradient(135deg, #334155, #111827)",
+};
+
+const getTemplateGradientCss = (templateColor: string | undefined): string => {
+  return gradientCssByTemplateClass[templateColor || ""] || gradientCssByTemplateClass["from-slate-700 to-slate-900"];
+};
+
 const buildVerificationQrSvg = (verificationUrl: string): string => {
   return renderToStaticMarkup(
     createElement(QRCodeSVG, {
@@ -52,6 +66,13 @@ export const buildCertificateHtml = (certificate: StudentCertificateRecord): str
   const verificationUrl = buildCertificateVerificationUrl(certificate.certificateId);
   const verificationQrSvg = buildVerificationQrSvg(verificationUrl);
   const status = certificate.revoked ? "Revoked" : "Valid";
+  const template = certificate.template;
+  const certificateTitle = template?.title || certificate.certificateType;
+  const certificateSubtitle = template?.subtitle || "This is to certify that";
+  const certificateBody = template?.body || certificate.description || certificate.grade || "has successfully completed the requirements";
+  const certificateCategory = template?.category || certificate.department || "Academic Certificate";
+  const templateFooter = template?.footer || "";
+  const sheetGradient = getTemplateGradientCss(template?.color);
 
   return `<!doctype html>
 <html lang="en">
@@ -74,7 +95,7 @@ export const buildCertificateHtml = (certificate: StudentCertificateRecord): str
         width: min(1000px, calc(100vw - 32px));
         aspect-ratio: 1.414 / 1;
         padding: 56px;
-        background: linear-gradient(135deg, #334155, #111827);
+        background: ${sheetGradient};
         color: #fff;
         border: 12px solid rgba(255, 255, 255, 0.24);
         box-shadow: 0 24px 80px rgba(15, 23, 42, 0.28);
@@ -87,6 +108,7 @@ export const buildCertificateHtml = (certificate: StudentCertificateRecord): str
       h1 { margin: 12px 0 8px; font-size: 38px; font-weight: 700; }
       h2 { margin: 0; font-size: 32px; font-weight: 600; }
       .recipient { margin: 24px auto; padding: 16px 48px; border-bottom: 2px solid rgba(255, 255, 255, 0.45); width: fit-content; min-width: 50%; }
+      .template-footer { margin-top: 14px; font-size: 13px; opacity: 0.78; }
       .details {
         display: grid;
         grid-template-columns: repeat(3, 1fr);
@@ -150,16 +172,17 @@ export const buildCertificateHtml = (certificate: StudentCertificateRecord): str
     <main class="sheet">
       <section class="center">
         <div class="eyebrow">Blockchain Verified Certificate</div>
-        <h1>${escapeHtml(certificate.certificateType)}</h1>
-        <p>${escapeHtml(certificate.department || "Academic Certificate")}</p>
+        <h1>${escapeHtml(certificateTitle)}</h1>
+        <p>${escapeHtml(certificateCategory)}</p>
       </section>
 
       <section class="center">
-        <p>This is to certify that</p>
+        <p>${escapeHtml(certificateSubtitle)}</p>
         <div class="recipient">
           <h2>${escapeHtml(certificate.studentName)}</h2>
         </div>
-        <p>${escapeHtml(certificate.description || certificate.grade || "has successfully completed the requirements")}</p>
+        <p>${escapeHtml(certificateBody)}</p>
+        ${templateFooter ? `<p class="template-footer">${escapeHtml(templateFooter)}</p>` : ""}
       </section>
 
       <section class="details">

@@ -103,6 +103,7 @@ const normalizeCertificateInput = (body) => ({
   studentName: String(body?.studentName || body?.name || "").trim(),
   studentEmail: String(body?.studentEmail || body?.email || "").trim().toLowerCase(),
   studentWalletAddress: String(body?.studentWalletAddress || body?.walletAddress || "").trim(),
+  templateId: String(body?.templateId || "").trim(),
   certificateType: String(body?.certificateType || "").trim(),
   department: String(body?.department || "").trim(),
   grade: String(body?.grade || "").trim(),
@@ -191,6 +192,17 @@ const toTemplateWriteData = (template) => {
   return data;
 };
 
+const toCertificateTemplateSnapshot = (template) => ({
+  templateId: template.id || "",
+  templateName: template.name || "",
+  templateCategory: template.category || "",
+  templateTitle: template.title || "",
+  templateSubtitle: template.subtitle || "",
+  templateBody: template.body || "",
+  templateFooter: template.footer || "",
+  templateColor: template.color || "from-slate-700 to-slate-900",
+});
+
 const getCertificateInputError = (certificate) => {
   if (
     !certificate.studentName ||
@@ -250,6 +262,43 @@ const resolveCertificateStudentWallet = async (certificate, User) => {
       studentWalletAddress: walletAddress,
     },
   };
+};
+
+const resolveCertificateTemplate = async (certificate, CertificateTemplate) => {
+  if (!certificate.templateId) {
+    return { certificate };
+  }
+
+  const template = await executeMaybeLean(CertificateTemplate.findOne({ id: certificate.templateId }));
+  if (!template) {
+    return {
+      message: "Template not found",
+      statusCode: 404,
+    };
+  }
+
+  return {
+    certificate: {
+      ...certificate,
+      certificateType: template.title || certificate.certificateType,
+      templateSnapshot: toCertificateTemplateSnapshot(template),
+    },
+  };
+};
+
+const incrementCertificateTemplateUses = async (CertificateTemplate, templateId, count, updatedBy) => {
+  if (!templateId || count <= 0) {
+    return;
+  }
+
+  try {
+    await CertificateTemplate.findOneAndUpdate(
+      { id: templateId },
+      { $inc: { uses: count }, $set: { updatedBy } },
+    );
+  } catch (error) {
+    console.error("Template usage update failed:", error);
+  }
 };
 
 const createHelmetOptions = () => ({
@@ -352,6 +401,16 @@ const toPublicCertificate = (certificate) => {
     grade: certificate.grade || "",
     department: certificate.department || "",
     description: certificate.description || "",
+    template: {
+      id: certificate.templateId || "",
+      name: certificate.templateName || "",
+      category: certificate.templateCategory || "",
+      title: certificate.templateTitle || certificate.certificateType || "",
+      subtitle: certificate.templateSubtitle || "",
+      body: certificate.templateBody || "",
+      footer: certificate.templateFooter || "",
+      color: certificate.templateColor || "",
+    },
     nftHash: certificate.certificateHash || "",
     revoked: Boolean(certificate.revoked),
     tokenUri: certificate.tokenUri || "",
@@ -1029,6 +1088,7 @@ const createApp = ({
   const saveIssuedCertificate = async ({ certificateId, certificate, issued, issuedBy }) => {
     const walletAddress = normalizeWalletAddress(certificate.studentWalletAddress);
     const certificateHash = issued.certificateHash || createCertificateHash(certificateId);
+    const templateSnapshot = certificate.templateSnapshot || {};
 
     return Certificate.create({
       certificateId,
@@ -1042,6 +1102,14 @@ const createApp = ({
       studentWalletAddress: walletAddress,
       studentWalletAddressNormalized: walletAddress.toLowerCase(),
       certificateType: certificate.certificateType,
+      templateId: templateSnapshot.templateId || certificate.templateId || "",
+      templateName: templateSnapshot.templateName || "",
+      templateCategory: templateSnapshot.templateCategory || "",
+      templateTitle: templateSnapshot.templateTitle || "",
+      templateSubtitle: templateSnapshot.templateSubtitle || "",
+      templateBody: templateSnapshot.templateBody || "",
+      templateFooter: templateSnapshot.templateFooter || "",
+      templateColor: templateSnapshot.templateColor || "",
       department: certificate.department,
       grade: certificate.grade,
       issueDate: certificate.issueDate,
@@ -1053,7 +1121,14 @@ const createApp = ({
   };
 
   app.post("/api/certificates/issue", authenticate, requireRole("admin"), async (req, res) => {
-    const certificateInput = normalizeCertificateInput(req.body);
+    let certificateInput = normalizeCertificateInput(req.body);
+
+    const resolvedTemplate = await resolveCertificateTemplate(certificateInput, CertificateTemplate);
+    if (resolvedTemplate.message) {
+      return res.status(resolvedTemplate.statusCode).json({ message: resolvedTemplate.message });
+    }
+
+    certificateInput = resolvedTemplate.certificate;
     const validationError = getCertificateInputError(certificateInput);
 
     if (validationError) {
@@ -1076,6 +1151,7 @@ const createApp = ({
         issued,
         issuedBy: req.auth.sub,
       });
+      await incrementCertificateTemplateUses(CertificateTemplate, certificate.templateId, 1, req.auth.sub);
 
       return res.status(201).json({
         certificateId,
@@ -1090,11 +1166,17 @@ const createApp = ({
 
   app.post("/api/certificates/bulk-issue", authenticate, requireRole("admin"), async (req, res) => {
     const students = Array.isArray(req.body?.students) ? req.body.students : [];
-    const sharedFields = normalizeCertificateInput(req.body);
+    let sharedFields = normalizeCertificateInput(req.body);
 
-    if (!sharedFields.certificateType) {
-      return res.status(400).json({ message: "Certificate type is required" });
+    if (!sharedFields.certificateType && !sharedFields.templateId) {
+      return res.status(400).json({ message: "Certificate template is required" });
     }
+
+    const resolvedTemplate = await resolveCertificateTemplate(sharedFields, CertificateTemplate);
+    if (resolvedTemplate.message) {
+      return res.status(resolvedTemplate.statusCode).json({ message: resolvedTemplate.message });
+    }
+    sharedFields = resolvedTemplate.certificate;
 
     if (students.length === 0) {
       return res.status(400).json({ message: "At least one student is required" });
@@ -1113,6 +1195,7 @@ const createApp = ({
         ...sharedFields,
         ...normalizeCertificateInput({
           ...rawStudent,
+          templateId: sharedFields.templateId,
           certificateType: sharedFields.certificateType,
           department: sharedFields.department,
           issueDate: sharedFields.issueDate,
@@ -1174,6 +1257,8 @@ const createApp = ({
     }
 
     const statusCode = failed.length > 0 ? 207 : 201;
+    await incrementCertificateTemplateUses(CertificateTemplate, sharedFields.templateId, issued.length, req.auth.sub);
+
     return res.status(statusCode).json({
       total: students.length,
       succeeded: issued.length,

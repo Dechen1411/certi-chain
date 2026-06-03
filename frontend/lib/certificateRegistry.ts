@@ -26,10 +26,22 @@ export interface StudentCertificateRecord {
   grade?: string;
   department?: string;
   description?: string;
+  template?: CertificateTemplateSnapshot;
   nftHash: string;
   revoked: boolean;
   tokenUri: string;
   txHash?: string;
+}
+
+export interface CertificateTemplateSnapshot {
+  id: string;
+  name: string;
+  category: string;
+  title: string;
+  subtitle: string;
+  body: string;
+  footer: string;
+  color: string;
 }
 
 export interface RegistryStats {
@@ -106,6 +118,20 @@ const sortCertificates = (certificates: StudentCertificateRecord[]): StudentCert
   });
 };
 
+const normalizeTemplateSnapshot = (
+  template: StudentCertificateRecord["template"] | undefined,
+  certificateType: string,
+): CertificateTemplateSnapshot => ({
+  id: template?.id || "",
+  name: template?.name || "",
+  category: template?.category || "",
+  title: template?.title || certificateType || "",
+  subtitle: template?.subtitle || "",
+  body: template?.body || "",
+  footer: template?.footer || "",
+  color: template?.color || "",
+});
+
 const normalizeCertificateRecord = (certificate: StudentCertificateRecord): StudentCertificateRecord => ({
   ...certificate,
   tokenId: certificate.tokenId || certificate.certificateId,
@@ -115,6 +141,7 @@ const normalizeCertificateRecord = (certificate: StudentCertificateRecord): Stud
   grade: certificate.grade || "",
   department: certificate.department || "",
   description: certificate.description || "",
+  template: normalizeTemplateSnapshot(certificate.template, certificate.certificateType),
   nftHash: certificate.nftHash || "",
   tokenUri: certificate.tokenUri || "",
   revoked: Boolean(certificate.revoked),
