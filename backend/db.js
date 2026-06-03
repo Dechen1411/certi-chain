@@ -9,7 +9,7 @@ const userSchema = new mongoose.Schema(
     role: { type: String, enum: ["admin", "student"], required: true },
     name: { type: String, required: true },
     walletAddress: { type: String, default: "" },
-    walletAddressNormalized: { type: String, default: "", index: true },
+    walletAddressNormalized: { type: String, default: "" },
     walletVerifiedAt: { type: Date },
   },
   {
