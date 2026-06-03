@@ -61,7 +61,10 @@ const extractCertificateIdFromPayload = (payload: string): string => {
   return (match?.[0] || trimmed).trim().toUpperCase();
 };
 
+type VerificationStatus = "valid" | "revoked" | "not_found" | "error";
+
 interface VerificationResult {
+  status: VerificationStatus;
   valid: boolean;
   id?: string;
   studentName?: string;
@@ -79,7 +82,7 @@ interface RecentVerification {
   certificateId: string;
   studentName: string;
   verifiedAt: string;
-  status: "Valid" | "Invalid";
+  status: "Valid" | "Revoked" | "Invalid";
 }
 
 export function EmployerPortal() {
@@ -120,6 +123,7 @@ export function EmployerPortal() {
 
       if (!exists) {
         setVerificationResult({
+          status: "not_found",
           valid: false,
           message: "Certificate not found. Please check the Certificate ID and try again.",
         });
@@ -146,6 +150,7 @@ export function EmployerPortal() {
       const metadata = parseMetadataUri(metadataUri);
 
       const result: VerificationResult = {
+        status: valid ? "valid" : "revoked",
         valid,
         id: metadata?.certificateId || normalizedId,
         studentName: metadata?.studentName || "Unknown",
@@ -165,12 +170,13 @@ export function EmployerPortal() {
           certificateId: result.id || normalizedId,
           studentName: result.studentName || "Unknown",
           verifiedAt: new Date().toLocaleString(),
-          status: valid ? "Valid" : "Invalid",
+          status: valid ? "Valid" : "Revoked",
         },
         ...prev,
       ]);
     } catch (error) {
       setVerificationResult({
+        status: "error",
         valid: false,
         message: getReadableError(error),
       });
@@ -412,11 +418,72 @@ export function EmployerPortal() {
                     </div>
                   </div>
                 </div>
+              ) : verificationResult.status === "revoked" ? (
+                <div className="space-y-6">
+                  <div className="flex items-center gap-4 pb-6 border-b border-gray-200">
+                    <IconBadge icon={XCircle} tone="red" className="h-16 w-16" />
+                    <div>
+                      <h3 className="text-2xl text-gray-900">Certificate Revoked</h3>
+                      <p className="text-gray-600">This certificate exists but is no longer valid</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-sm text-gray-600">Certificate ID</label>
+                        <p className="text-gray-900 mt-1">{verificationResult.id}</p>
+                      </div>
+                      <div>
+                        <label className="text-sm text-gray-600">Student Name</label>
+                        <p className="text-gray-900 mt-1">{verificationResult.studentName}</p>
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="text-sm text-gray-600">Certificate Type</label>
+                        <p className="text-gray-900 mt-1">{verificationResult.certificateType}</p>
+                      </div>
+                      <div>
+                        <label className="text-sm text-gray-600">Department</label>
+                        <p className="text-gray-900 mt-1">{verificationResult.department}</p>
+                      </div>
+                      <div>
+                        <label className="text-sm text-gray-600">Grade</label>
+                        <p className="text-gray-900 mt-1">{verificationResult.grade}</p>
+                      </div>
+                      <div>
+                        <label className="text-sm text-gray-600">Issue Date</label>
+                        <p className="text-gray-900 mt-1">
+                          {verificationResult.issueDate
+                            ? new Date(verificationResult.issueDate).toLocaleDateString()
+                            : "N/A"}
+                        </p>
+                      </div>
+                      <div>
+                        <label className="text-sm text-gray-600">Verification Hash</label>
+                        <p className="text-gray-900 mt-1 font-mono text-sm break-all">{verificationResult.nftHash}</p>
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="text-sm text-gray-600">Student Wallet</label>
+                        <p className="text-gray-900 mt-1 font-mono text-sm break-all">{verificationResult.studentWalletAddress}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-red-50 border border-red-100 p-4 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <XCircle className="w-6 h-6 text-red-700" />
+                      <div>
+                        <p className="text-sm text-gray-900">Revoked Record</p>
+                        <p className="text-xs text-gray-600">Do not accept this certificate as valid proof.</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               ) : (
                 <div className="text-center space-y-4">
                   <EmptyState
                     icon={XCircle}
-                    title="Certificate Not Found"
+                    title={verificationResult.status === "error" ? "Verification Failed" : "Certificate Not Found"}
                     description={verificationResult.message || "No matching certificate was found."}
                   />
                 </div>
